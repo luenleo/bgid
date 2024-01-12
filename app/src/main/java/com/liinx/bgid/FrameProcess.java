@@ -14,6 +14,7 @@ import org.opencv.core.MatOfFloat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
@@ -45,9 +46,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private MatOfPoint2f preGrayPoints = new MatOfPoint2f();
     private MatOfPoint2f curGrayPoints = new MatOfPoint2f();
     private double threshold = 0.001;//灰度指数小于阈值则加入灰点组,后续可以用堆排序实现灰点数量控制
-    private double L_f = 0;
-    private double L_ref = 0;
-    private double L_0_pre = 0;
+    private Point3 L_f = new Point3(0,0,0);
+    private Point3 L_ref = new Point3(0,0,0);
+    private Point3 L_0_pre = new Point3(0,0,0);
     private MatOfByte status = null;
     private MatOfFloat err = null;
 
@@ -80,7 +81,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         //计算L_0
         List<Point> pointList = new ArrayList<>();//储存检测到的灰点坐标
-        double L_0 = 0;//计算单帧灰点检测估计的光源颜色
+        Point3 L_0 = new Point3(0, 0, 0);//计算单帧灰点检测估计的光源颜色
         for(int i = 0; i < curRGBFrame.rows(); i = i + 10){
             for(int j = 0; j < curRGBFrame.cols(); j = j + 10){
                 int count = 0;//对应四个方向
@@ -125,13 +126,19 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 double G = Math.sqrt(Math.pow(sumb/count, 2) + Math.pow(sumr/count, 2));//该点的灰度指数
                 if(G <= threshold){
                     pointList.add(new Point(i, j));
-                    L_0 = L_0 + I;
+                    //按RGB存储
+                    L_0.x = L_0.x + pix[2];
+                    L_0.y = L_0.y + pix[1];
+                    L_0.z = L_0.z + pix[0];
+
                 }
 
             }
         }
         curGrayPoints.fromList(pointList);
-        L_0 = L_0/curGrayPoints.toList().size();//单帧光源颜色估计
+        L_0.x = L_0.x/curGrayPoints.toList().size();//单帧光源颜色估计
+        L_0.y = L_0.y/curGrayPoints.toList().size();
+        L_0.z = L_0.z/curGrayPoints.toList().size();
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
             // 计算光流，计算映射过后的灰点位置集合
@@ -186,13 +193,16 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 curGrayPoints.fromList(mapped);
             }
             //计算当前帧的L_s
-            double L_s = 0;
+            Point3 L_s = new Point3(0,0,0);
             Point[] ls = curGrayPoints.toArray();
             for(int i = 0; i < curGrayPoints.toArray().length; i++){
-                L_s = L_s + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[0] + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[1] + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[2];
+                L_s.x = L_s.x + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[2];
+                L_s.y = L_s.y + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[1];
+                L_s.z = L_s.z + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[0];
             }
-            L_s = L_s/ ls.length;
-
+            L_s.x = L_s.x/ ls.length;
+            L_s.y = L_s.y/ ls.length;
+            L_s.z = L_s.z/ ls.length;
         }else{//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             L_f = L_0;
             L_0_pre = L_0;
@@ -200,7 +210,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         preGrayPoints = curGrayPoints;
         preGrayFrame = curGrayFrame;
         prePose = curPose;
-
         return result;
     }
 }
