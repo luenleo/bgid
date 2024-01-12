@@ -7,6 +7,7 @@ import android.widget.Toast;
 import com.liinx.bgid.utils.Quaternion;
 
 import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
@@ -203,6 +204,62 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_s.x = L_s.x/ ls.length;
             L_s.y = L_s.y/ ls.length;
             L_s.z = L_s.z/ ls.length;
+
+            //计算角误差与加权权重
+            double theta_s = Math.acos(L_s.dot(L_f)
+                    /(Math.sqrt(L_s.x*L_s.x + L_s.y*L_s.y + L_s.z*L_s.z)
+                            *Math.sqrt(L_f.x*L_f.x + L_f.y*L_f.y + L_f.z*L_f.z)));
+            double theta_0 = Math.acos(L_0.dot(L_0_pre)
+                    /(Math.sqrt(L_0.x*L_0.x + L_0.y*L_0.y + L_0.z*L_0.z)
+                            *Math.sqrt(L_0_pre.x*L_0_pre.x + L_0_pre.y*L_0_pre.y + L_0_pre.z*L_0_pre.z)));
+            double w = Math.exp(-0.3*Math.min(theta_0, theta_s)*Math.min(theta_0, theta_s));
+
+            //加权融合光源
+            Point3 mid_L_f = new Point3(L_f.x*w, L_f.y*w, L_f.z*w);
+            Point3 mid_L_0 = new Point3(L_0.x*(1-w), L_0.y*(1-w), L_0.z*(1-w));
+            L_ref = new Point3(mid_L_0.x + mid_L_f.x, mid_L_0.y + mid_L_f.y, mid_L_0.z + mid_L_f.z);
+
+            //根据融合光源估计重新进行灰点检测
+            L_f.x = 0;
+            L_f.y = 0;
+            L_f.z = 0;
+            List<Point> pl = new ArrayList<>();
+            for(int i = 0; i < curRGBFrame.rows(); i = i + 10){
+                for(int j = 0; j < curRGBFrame.cols(); j = j + 10){
+                    double[] pix = curRGBFrame.get(i, j);
+                    //计算灰度指数
+                    Point3 pix3 = new Point3(pix[2], pix[1], pix[0]);
+                    double g = Math.acos(pix3.dot(L_ref)
+                    /(Math.sqrt(pix3.x*pix3.x + pix3.y*pix3.y + pix3.z*pix3.z)
+                    *Math.sqrt(L_ref.x*L_ref.x + L_ref.y*L_ref.y + L_ref.z*L_ref.z)));
+                    if(g <= threshold){
+                        pl.add(new Point(i, j));
+                        L_f.x += pix3.x;
+                        L_f.y += pix3.y;
+                        L_f.z += pix3.z;
+                    }
+                }
+            }
+            curGrayPoints.fromList(pl);
+            L_f.x = L_f.x/curGrayPoints.toList().size();
+            L_f.y = L_f.y/curGrayPoints.toList().size();
+            L_f.z = L_f.z/curGrayPoints.toList().size();
+
+            //进行白平衡
+            List<Mat> channels = Arrays.asList(new Mat(), new Mat(), new Mat());
+            Core.split(curRGBFrame, channels);
+            double LightSourceMean = (L_f.x + L_f.y + L_f.z)/3.0;
+            Scalar gainR = new Scalar(LightSourceMean/L_f.x) ;
+            Scalar gainG = new Scalar(LightSourceMean/L_f.y) ;
+            Scalar gainB = new Scalar(LightSourceMean/L_f.z) ;
+            Scalar[] gain = {gainB, gainG, gainR};
+            for(int i = 0; i < 3; i++){
+                Mat channel = channels.get(i);
+                Core.multiply(channel, gain[i], channel);
+            }
+            Core.merge(channels, curRGBFrame);
+
+
         }else{//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             L_f = L_0;
             L_0_pre = L_0;
