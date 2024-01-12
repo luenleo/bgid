@@ -1,0 +1,5 @@
+org.opencv.test.opencv2-androidTest-0 D:\AndroidProjects\bgid\opencv2\sdk\build\generated\res\resValues\androidTest\debug
+org.opencv.test.opencv2-mergeDebugAndroidTestResources-1 D:\AndroidProjects\bgid\opencv2\sdk\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+org.opencv.test.opencv2-mergeDebugAndroidTestResources-2 D:\AndroidProjects\bgid\opencv2\sdk\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+org.opencv.test.opencv2-merged_res-3 D:\AndroidProjects\bgid\opencv2\sdk\build\intermediates\merged_res\debugAndroidTest
+org.opencv.test.opencv2-packaged_res-4 D:\AndroidProjects\bgid\opencv2\sdk\build\intermediates\packaged_res\debug
