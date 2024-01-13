@@ -40,6 +40,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         return fp;
     }
 
+    private boolean WhiteBalanceOn = false;
+
     private Mat preRGBFrame = null;
     private Mat preGrayFrame = null;
     private Mat curRGBFrame = null;
@@ -48,7 +50,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private Quaternion curPose = null;
     private MatOfPoint2f preGrayPoints = new MatOfPoint2f();
     private MatOfPoint2f curGrayPoints = new MatOfPoint2f();
-    private int grayPointNumber = CONFIG.grayPointNumber;//灰度指数小于阈值则加入灰点组,后续可以用堆排序实现灰点数量控制
+    private int grayPointNumber = CONFIG.grayPointNumber;
 
     // 当前帧单帧颜色估计结果
     private Point3 L_0;
@@ -76,11 +78,16 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private int counter = 0;
     @Override
     public void onClick(View v) {
-        Mat save = new Mat();
-        Imgproc.cvtColor(curRGBFrame, save, Imgproc.COLOR_RGBA2BGR);
-        String filename = "/storage/emulated/0/Download/photo_"+ counter++ +".jpg";
-        Imgcodecs.imwrite(filename, save);
-        Toast.makeText(ImuListener.activity, "保存至"+filename, Toast.LENGTH_SHORT).show();
+        if (v.getId() == R.id.button) {
+                Mat save = new Mat();
+                Imgproc.cvtColor(curRGBFrame, save, Imgproc.COLOR_RGBA2BGR);
+                String filename = "/storage/emulated/0/Download/photo_"+ counter++ +".jpg";
+                Imgcodecs.imwrite(filename, save);
+                Toast.makeText(ImuListener.activity, "保存至"+filename, Toast.LENGTH_SHORT).show();
+            }
+        else if (v.getId() == R.id.switchMode){
+            WhiteBalanceOn = !WhiteBalanceOn;
+        }
     }
 
     private Point3 singleFrameLightEst(Mat frame){
@@ -233,7 +240,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 double g = Math.acos(pix3.dot(L_ref)
                         /(Math.sqrt(pix3.x*pix3.x + pix3.y*pix3.y + pix3.z*pix3.z)
                         *Math.sqrt(L_ref.x*L_ref.x + L_ref.y*L_ref.y + L_ref.z*L_ref.z)));
-                if(g <= 0.1){
+                if(g <= 4){
                     pl.add(new Point(i, j));
                     L_f.x += pix3.x;
                     L_f.y += pix3.y;
@@ -249,24 +256,29 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
     private Mat adjustWhiteBalance(Mat frame, Point3 L_f){
         //进行白平衡
-//        List<Mat> channels = new ArrayList<>();
-//        Core.split(frame, channels);
-//        double LightSourceMean = (L_f.x + L_f.y + L_f.z)/3.0;
-//        Scalar gainR = new Scalar(LightSourceMean/L_f.x) ;
-//        Scalar gainG = new Scalar(LightSourceMean/L_f.y) ;
-//        Scalar gainB = new Scalar(LightSourceMean/L_f.z) ;
-//        Scalar[] gain = {gainB, gainG, gainR};
-//        for(int i = 0; i < 3; i++){
-//            Mat channel = channels.get(i);
-//            Core.multiply(channel, gain[i], channel);
-//        }
-//        Core.merge(channels, frame);
+        List<Mat> channels = new ArrayList<>();
+        Core.split(frame, channels);
+        double LightSourceMean = (L_f.x + L_f.y + L_f.z)/3.0;
+
+        Scalar gainR = new Scalar(LightSourceMean / L_f.x);
+        Scalar gainG = new Scalar(LightSourceMean / L_f.y);
+        Scalar gainB = new Scalar(LightSourceMean / L_f.z);
+        Scalar[] gain = {gainB, gainG, gainR};
+        for(int i = 0; i < 3; i++){
+            Mat channel = channels.get(i);
+            Core.multiply(channel, gain[i], channel);
+        }
+        Core.merge(channels, frame);
         return frame;
     }
 
     //灰点检测，光源融合部分
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        if (!WhiteBalanceOn){
+            preGrayPoints = new MatOfPoint2f();
+            return inputFrame.rgba();
+        }
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
         curPose = ImuListener.getInstance().getPose();
@@ -303,8 +315,12 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
             //根据融合光源估计重新进行灰点检测
             L_f = correctLight();
+            Log.i(TAG, "L_f:"+L_f);
 
             adjustWhiteBalance(result, L_f);
+            Log.i(TAG, "画面白平衡\n");
+            L_f_pre = L_f;
+            L_0_pre = L_0;
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             Log.i(TAG, "第一帧");
             L_f_pre = L_0;

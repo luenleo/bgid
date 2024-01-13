@@ -35,6 +35,8 @@ public class MainActivity extends CameraActivity {
 
         Button button = findViewById(R.id.button);
         button.setOnClickListener(FrameProcess.getInstance());
+        button = findViewById(R.id.switchMode);
+        button.setOnClickListener(FrameProcess.getInstance());
 
         // CameraViw
         mCameraView = findViewById(R.id.jcv);
