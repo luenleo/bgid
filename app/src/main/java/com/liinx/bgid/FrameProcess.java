@@ -51,6 +51,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private MatOfPoint2f preGrayPoints = new MatOfPoint2f();
     private MatOfPoint2f curGrayPoints = new MatOfPoint2f();
     private int grayPointNumber = CONFIG.grayPointNumber;
+    private double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
 
     // 当前帧单帧颜色估计结果
     private Point3 L_0;
@@ -124,7 +125,12 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         channels.get(1).convertTo(greenFrame, CvType.CV_64F);
         channels.get(0).convertTo(blueFrame, CvType.CV_64F);
 
-        Mat temp = new Mat(frame.size(), CvType.CV_64F);
+        Size newSize = new Size(frame.cols()*downsampleFactor, frame.rows()*downsampleFactor);
+        Imgproc.resize(redFrame, redFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+        Imgproc.resize(blueFrame, blueFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+        Imgproc.resize(greenFrame, greenFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+
+        Mat temp = new Mat(newSize, CvType.CV_64F);
         Core.add(redFrame, greenFrame, temp);
         Core.add(blueFrame, temp, temp);
         Core.log(temp, temp);
@@ -149,7 +155,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for (int i = 1; i < temp.rows()-1; i += 1)
             for (int j = 1; j < temp.cols()-1; j += 1) {
-                grayPoints.add(new WrapPoint(i, j, temp.get(i, j)[0]));
+                grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
             }
 
         L_0 = new Point3(0,0,0);
