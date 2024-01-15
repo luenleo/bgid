@@ -164,8 +164,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             Point p = grayPoints.poll();
             gps.add(p);
 
-            byte[] BGR = new byte[4];
-            curRGBFrame.get((int) p.x, (int) p.y, BGR);
+            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
             L_0.x += BGR[2];
             L_0.y += BGR[1];
             L_0.z += BGR[0];
@@ -233,8 +232,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Point3 L_s = new Point3(0,0,0);
         Point[] gps = curGrayPoints.toArray();
         for (Point grayPoint : gps){
-            byte[] RGB = new byte[4];
-            curRGBFrame.get((int) grayPoint.x, (int) grayPoint.y, RGB);
+            double[] RGB = curRGBFrame.get((int) grayPoint.x, (int) grayPoint.y);
             L_s.x += RGB[2];
             L_s.y += RGB[1];
             L_s.z += RGB[0];
@@ -260,10 +258,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             }
         }
 
-        byte[] BGR = new byte[4];
         for (int i = 0; i < grayPointNumber; i++) {
             WrapPoint p = grayPoints.poll();
-            curRGBFrame.get((int) p.x, (int) p.y, BGR);
+            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
 
             L_f.x += BGR[2];
             L_f.y += BGR[1];
@@ -314,13 +311,16 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
+            Log.i(TAG, "L_f_pre:"+L_f_pre);
+            Log.i(TAG, "L_0_pre:"+L_0_pre);
+
             // 计算光流，计算映射过后的灰点位置集合
             Point3 L_s = grayPointShiftLightEst(result);
             Log.i(TAG, "L_s:"+L_s);
 
             //计算角误差与加权权重
-            double theta_s = calAngel(L_f_pre, L_0);
-            double theta_0 = calAngel(L_0, L_0_pre);
+            double theta_s = calAngel(L_f_pre, L_s);
+            double theta_0 = calAngel(L_0_pre, L_0);
             double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
             Log.i(TAG, "ts:"+theta_s + ",\tt0:"+theta_0+",\tw:"+w);
 
@@ -337,15 +337,17 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             Log.i(TAG, "L_f:"+L_f);
 
             adjustWhiteBalance(result, L_f);
-            Log.i(TAG, "画面白平衡\n");
+            Log.i(TAG, "画面白平衡");
             L_f_pre = L_f;
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             Log.i(TAG, "第一帧");
             L_f_pre = L_0;
         }
+        Log.i(TAG, "-----------------------");
 
         L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
+
         preGrayFrame = curGrayFrame;
         prePose = curPose;
         return result;
