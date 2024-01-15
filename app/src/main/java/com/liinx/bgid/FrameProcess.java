@@ -67,6 +67,24 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private MatOfByte status = new MatOfByte();
     private MatOfFloat err = new MatOfFloat();
 
+    /**
+     * 用于优先队列排序的包装类
+     */
+    class WrapPoint extends Point{
+        public double value;
+
+        public double getValue() {
+            return value;
+        }
+
+        public WrapPoint(double x, double y, double value) {
+            this.x = x;
+            this.y = y;
+            this.value = value;
+        }
+    }
+    private final Comparator<WrapPoint> cmp = Comparator.comparingDouble(WrapPoint::getValue);
+
     @Override
     public void onCameraViewStarted(int width, int height) {
     }
@@ -90,7 +108,13 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         }
     }
 
-    private Point3 singleFrameLightEst(Mat frame){
+    private double calAngel(Point3 a, Point3 b){
+        return Math.acos(a.dot(b)
+                /(Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z)
+                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z)));
+    }
+
+    private Point3 singleFrameLightEst(Mat frame, Mat draw){
         List<Mat> channels = new ArrayList<>();
         Core.split(frame, channels);
         Mat redFrame = new Mat();
@@ -113,45 +137,34 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         // LoG
         Imgproc.GaussianBlur(redFrame, redFrame, new Size(3,3), 2);
-        Imgproc.GaussianBlur(blueFrame, redFrame, new Size(3,3), 2);
-        Imgproc.Laplacian(redFrame, redFrame, CvType.CV_8U, 1);
-        Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_8U, 1);
+        Imgproc.GaussianBlur(blueFrame, blueFrame, new Size(3,3), 2);
+        Imgproc.Laplacian(redFrame, redFrame, CvType.CV_64F, 1);
+        Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_64F, 1);
 
         Core.pow(redFrame, 2, redFrame);
         Core.pow(blueFrame, 2, blueFrame);
         Core.add(redFrame, blueFrame, temp);
+        Core.sqrt(temp, temp);
 
-        class WrapPoint extends Point{
-            public double value;
-
-            public double getValue() {
-                return value;
-            }
-
-            public WrapPoint(double x, double y, double value) {
-                this.x = x;
-                this.y = y;
-                this.value = value;
-            }
-        }
-        Comparator<WrapPoint> cmp = Comparator.comparingDouble(WrapPoint::getValue);
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for (int i = 1; i < temp.rows()-1; i += 1)
             for (int j = 1; j < temp.cols()-1; j += 1) {
                 grayPoints.add(new WrapPoint(i, j, temp.get(i, j)[0]));
             }
 
-
         L_0 = new Point3(0,0,0);
         List<Point> gps = new ArrayList<>();
         for (int i = 0; i < grayPointNumber; i++) {
             Point p = grayPoints.poll();
             gps.add(p);
+
             byte[] BGR = new byte[4];
             curRGBFrame.get((int) p.x, (int) p.y, BGR);
             L_0.x += BGR[2];
             L_0.y += BGR[1];
             L_0.z += BGR[0];
+
+            Imgproc.circle(draw, p, 1, green, -1);
         }
         L_0.x /= grayPointNumber;
         L_0.y /= grayPointNumber;
@@ -177,7 +190,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         List<Point> shiftedGrayPoints = new ArrayList<>();
         byte[] s = status.toArray();
         for (int i = 0; i < pre.length; i++) {
-            //Imgproc.circle(curRGBFrame, pre[i], 3, green, Imgproc.FILLED);
             if (s[i] == 1) {
                 // 当前坐标
                 Mat location = new Mat(3, 1, CvType.CV_64F);
@@ -231,26 +243,30 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         L_f.x = 0;
         L_f.y = 0;
         L_f.z = 0;
-        ArrayList<Point> pl = new ArrayList<>();
+        PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for(int i = 0; i < curRGBFrame.rows(); i = i + 10){
             for(int j = 0; j < curRGBFrame.cols(); j = j + 10){
                 double[] pix = curRGBFrame.get(i, j);
                 //计算灰度指数
                 Point3 pix3 = new Point3(pix[2], pix[1], pix[0]);
-                double g = Math.acos(pix3.dot(L_ref)
-                        /(Math.sqrt(pix3.x*pix3.x + pix3.y*pix3.y + pix3.z*pix3.z)
-                        *Math.sqrt(L_ref.x*L_ref.x + L_ref.y*L_ref.y + L_ref.z*L_ref.z)));
-                if(g <= 4){
-                    pl.add(new Point(i, j));
-                    L_f.x += pix3.x;
-                    L_f.y += pix3.y;
-                    L_f.z += pix3.z;
-                }
+                double g = calAngel(pix3, L_ref);
+                grayPoints.add(new WrapPoint(i, j, g));
             }
         }
-        L_f.x /= pl.size();
-        L_f.y /= pl.size();
-        L_f.z /= pl.size();
+
+        byte[] BGR = new byte[4];
+        for (int i = 0; i < grayPointNumber; i++) {
+            WrapPoint p = grayPoints.poll();
+            curRGBFrame.get((int) p.x, (int) p.y, BGR);
+
+            L_f.x += BGR[2];
+            L_f.y += BGR[1];
+            L_f.z += BGR[0];
+        }
+
+        L_f.x /= grayPointNumber;
+        L_f.y /= grayPointNumber;
+        L_f.z /= grayPointNumber;
         return L_f;
     }
 
@@ -287,46 +303,42 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         preRGBFrame = curRGBFrame;
         Log.i(TAG, "准备工作");
 
-        L_0 = singleFrameLightEst(curRGBFrame);
+        singleFrameLightEst(curRGBFrame, result);
         Log.i(TAG, "L0:"+L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
             // 计算光流，计算映射过后的灰点位置集合
             Point3 L_s = grayPointShiftLightEst(result);
+            Log.i(TAG, "L_s:"+L_s);
 
             //计算角误差与加权权重
-            double theta_s = Math.acos(L_s.dot(L_f_pre)
-                    /(Math.sqrt(L_s.x*L_s.x + L_s.y*L_s.y + L_s.z*L_s.z)
-                            *Math.sqrt(L_f_pre.x*L_f_pre.x + L_f_pre.y*L_f_pre.y + L_f_pre.z*L_f_pre.z)));
-            double theta_0 = Math.acos(L_0.dot(L_0_pre)
-                    /(Math.sqrt(L_0.x*L_0.x + L_0.y*L_0.y + L_0.z*L_0.z)
-                            *Math.sqrt(L_0_pre.x*L_0_pre.x + L_0_pre.y*L_0_pre.y + L_0_pre.z*L_0_pre.z)));
-            double w = Math.exp(-0.3*Math.min(theta_0, theta_s)*Math.min(theta_0, theta_s));
-            Log.i(TAG, "ts:"+theta_s + ", t0:"+theta_0+", w:"+w);
+            double theta_s = calAngel(L_f_pre, L_0);
+            double theta_0 = calAngel(L_0, L_0_pre);
+            double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+            Log.i(TAG, "ts:"+theta_s + ",\tt0:"+theta_0+",\tw:"+w);
 
             //加权融合光源
             L_ref = new Point3(
-                    L_f_pre.x * w + L_0.x * w,
-                    L_f_pre.y * w + L_0.y * w,
-                    L_f_pre.z * w + L_0.z * w
+                    L_f_pre.x * w + L_0.x * (1-w),
+                    L_f_pre.y * w + L_0.y * (1-w),
+                    L_f_pre.z * w + L_0.z * (1-w)
             );
             Log.i(TAG, "Lref:"+L_ref);
 
             //根据融合光源估计重新进行灰点检测
-            L_f = correctLight();
+            correctLight();
             Log.i(TAG, "L_f:"+L_f);
 
             adjustWhiteBalance(result, L_f);
             Log.i(TAG, "画面白平衡\n");
             L_f_pre = L_f;
-            L_0_pre = L_0;
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             Log.i(TAG, "第一帧");
             L_f_pre = L_0;
-            L_0_pre = L_0;
         }
 
+        L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
         preGrayFrame = curGrayFrame;
         prePose = curPose;
