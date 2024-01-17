@@ -21,12 +21,55 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.PriorityQueue;
 
+class DataOutput{
+    private String rootPath;
+    private Map<String, File> files = new HashMap<>();
+
+    public DataOutput(String rootPath) {
+        this.rootPath = rootPath;
+    }
+
+    public void write(String type, double... data){
+        File f;
+        if (files.containsKey(type)){
+            f = files.get(type);
+        } else {
+            f = new File(rootPath+type+".txt");
+            try (FileWriter w = new FileWriter(f)){
+                w.write("");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            files.put(type, f);
+        }
+        try (FileWriter writer = new FileWriter(f, true)){
+            StringBuilder temp = new StringBuilder();
+            for (double x : data)
+                temp.append(String.format("%1.6f", x)).append(',').append(' ');
+            temp.append('\n');
+            writer.append(temp.toString());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void write(String type, Point3 p){
+        write(type, p.x, p.y, p.z);
+    }
+}
+
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
+    private DataOutput LOG = new DataOutput("/storage/emulated/0/AAAAAA/");
     private static final String TAG = "GRAY-POINT";
 
     private static final Scalar red      = new Scalar(255,  50,  50);
@@ -106,6 +149,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             }
         else if (v.getId() == R.id.switchMode){
             WhiteBalanceOn = !WhiteBalanceOn;
+            Toast.makeText(ImuListener.activity, WhiteBalanceOn?"打开白平衡处理":"关闭白平衡处理", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -248,8 +292,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         L_f.y = 0;
         L_f.z = 0;
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
-        for(int i = 0; i < curRGBFrame.rows(); i = i + 10){
-            for(int j = 0; j < curRGBFrame.cols(); j = j + 10){
+        for(int i = 0; i < curRGBFrame.rows(); i = i + 5){
+            for(int j = 0; j < curRGBFrame.cols(); j = j + 5){
                 double[] pix = curRGBFrame.get(i, j);
                 //计算灰度指数
                 Point3 pix3 = new Point3(pix[2], pix[1], pix[0]);
@@ -282,6 +326,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainR = new Scalar(LightSourceMean / L_f.x);
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
+        LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
         Scalar[] gain = {gainB, gainG, gainR};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
@@ -304,25 +349,26 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
         preRGBFrame = curRGBFrame;
-        Log.i(TAG, "准备工作");
 
         singleFrameLightEst(curRGBFrame, result);
-        Log.i(TAG, "L0:"+L_0);
+        LOG.write("L_0", L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
-            Log.i(TAG, "L_f_pre:"+L_f_pre);
-            Log.i(TAG, "L_0_pre:"+L_0_pre);
+            LOG.write("L_f_pre", L_f_pre);
+            LOG.write("L_0_pre", L_0_pre);
 
             // 计算光流，计算映射过后的灰点位置集合
             Point3 L_s = grayPointShiftLightEst(result);
-            Log.i(TAG, "L_s:"+L_s);
+            LOG.write("L_s", L_s);
 
             //计算角误差与加权权重
             double theta_s = calAngel(L_f_pre, L_s);
             double theta_0 = calAngel(L_0_pre, L_0);
-            double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
-            Log.i(TAG, "ts:"+theta_s + ",\tt0:"+theta_0+",\tw:"+w);
+            double w = Math.exp(-10000 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+            LOG.write("ts", theta_s);
+            LOG.write("t0", theta_0);
+            LOG.write("w", w);
 
             //加权融合光源
             L_ref = new Point3(
@@ -330,20 +376,17 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                     L_f_pre.y * w + L_0.y * (1-w),
                     L_f_pre.z * w + L_0.z * (1-w)
             );
-            Log.i(TAG, "Lref:"+L_ref);
+            LOG.write("L_ref", L_ref);
 
             //根据融合光源估计重新进行灰点检测
             correctLight();
-            Log.i(TAG, "L_f:"+L_f);
+            LOG.write("L_f", L_f);
 
             adjustWhiteBalance(result, L_f);
-            Log.i(TAG, "画面白平衡");
             L_f_pre = L_f;
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
-            Log.i(TAG, "第一帧");
             L_f_pre = L_0;
         }
-        Log.i(TAG, "-----------------------");
 
         L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
