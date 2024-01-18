@@ -42,7 +42,7 @@ class DataOutput{
         this.rootPath = rootPath;
     }
 
-    public void write(String type, double... data){
+    public void write(String type, boolean separator, double... data){
         File f;
         if (files.containsKey(type)){
             f = files.get(type);
@@ -58,12 +58,17 @@ class DataOutput{
         try (FileWriter writer = new FileWriter(f, true)){
             StringBuilder temp = new StringBuilder();
             for (double x : data)
-                temp.append(String.format("%1.6f", x)).append(',').append(' ');
+                if (separator) temp.append(String.format("%1.6f", x)).append(',').append(' ');
+                else temp.append(String.format("%1.6f", x));
             temp.append('\n');
             writer.append(temp.toString());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void write(String type, double... data){
+        write(type, true, data);
     }
 
     public void write(String type, Point3 p){
@@ -73,17 +78,18 @@ class DataOutput{
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
     private static final String TAG = "GRAY-POINT";
+    private final String rootPath = "/storage/emulated/0/AAAAAA/";
 
     public static MainActivity activity;
     private boolean WhiteBalanceOn = false;
-    private DataOutput LOG = new DataOutput("/storage/emulated/0/AAAAAA/");
+    private DataOutput LOG = new DataOutput(rootPath);
     //是否录制标识
     private boolean isRecording = false;
 
     //原始视频保存路径
-    String fileUrl_o = "/storage/emulated/0/AAAAAA/video_org";
+    String fileUrl_o = rootPath+"video_org";
     //处理视频保存路径
-    String fileUrl_imu = "/storage/emulated/0/AAAAAA/video_imu";
+    String fileUrl_imu = rootPath+"video_imu";
     //原始视频
     VideoWriter videoWriter_org = null;
     //经过ium灰点漂移加光源融合后的视频
@@ -377,24 +383,18 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         preRGBFrame = curRGBFrame;
 
         singleFrameLightEst(curRGBFrame, result);
-        LOG.write("L_0", L_0);
+//        if(isRecording) LOG.write("L_0", L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
-            LOG.write("L_f_pre", L_f_pre);
-            LOG.write("L_0_pre", L_0_pre);
 
             // 计算光流，计算映射过后的灰点位置集合
             Point3 L_s = grayPointShiftLightEst(result);
-            LOG.write("L_s", L_s);
 
             //计算角误差与加权权重
             double theta_s = calAngel(L_f_pre, L_s);
             double theta_0 = calAngel(L_0_pre, L_0);
             double w = Math.exp(-10000 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
-            LOG.write("ts", theta_s);
-            LOG.write("t0", theta_0);
-            LOG.write("w", w);
 
             //加权融合光源
             L_ref = new Point3(
@@ -402,14 +402,34 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                     L_f_pre.y * w + L_0.y * (1-w),
                     L_f_pre.z * w + L_0.z * (1-w)
             );
-            LOG.write("L_ref", L_ref);
 
             //根据融合光源估计重新进行灰点检测
             correctLight();
-            LOG.write("L_f", L_f);
 
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
+
+            if (isRecording) {
+//                LOG.write("L_f_pre", L_f_pre);
+//                LOG.write("L_0_pre", L_0_pre);
+//                LOG.write("L_s", L_s);
+//                LOG.write("L_ref", L_ref);
+//                LOG.write("L_f", L_f)
+                LOG.write("ts", false, theta_s);
+                LOG.write("t0", false, theta_0);
+                LOG.write("w", false, w);
+
+                int width = 960;
+                int radius = 40;
+
+                Imgproc.circle(result, new Point(width-3*radius, radius),      radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
+                Imgproc.circle(result, new Point(width-radius, radius),        radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
+                Imgproc.circle(result, new Point(width-3*radius, 3*radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
+                Imgproc.circle(result, new Point(width-radius, 3*radius),   radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
+
+                Imgproc.putText(result, "L0       Ls", new Point(width-3*radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+                Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+            }
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             L_f_pre = L_0;
         }
