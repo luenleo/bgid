@@ -78,7 +78,7 @@ class DataOutput{
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
     private static final String TAG = "GRAY-POINT";
-    private final String rootPath = "/storage/emulated/0/AAAAAA/";
+    private final String rootPath = "/storage/emulated/0/Download/";
 
     public static MainActivity activity;
     private boolean WhiteBalanceOn = false;
