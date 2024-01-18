@@ -2,28 +2,98 @@ package com.liinx.bgid;
 
 import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.liinx.bgid.utils.Quaternion;
 
 import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfFloat;
-import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
+import org.opencv.videoio.VideoWriter;
+import org.opencv.videoio.Videoio;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+
+class DataOutput{
+    private String rootPath;
+    private Map<String, File> files = new HashMap<>();
+
+    public DataOutput(String rootPath) {
+        this.rootPath = rootPath;
+    }
+
+    public void write(String type, boolean separator, double... data){
+        File f;
+        if (files.containsKey(type)){
+            f = files.get(type);
+        } else {
+            f = new File(rootPath+type+".txt");
+            try (FileWriter w = new FileWriter(f)){
+                w.write("");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            files.put(type, f);
+        }
+        try (FileWriter writer = new FileWriter(f, true)){
+            StringBuilder temp = new StringBuilder();
+            for (double x : data)
+                if (separator) temp.append(String.format("%1.6f", x)).append(',').append(' ');
+                else temp.append(String.format("%1.6f", x));
+            temp.append('\n');
+            writer.append(temp.toString());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void write(String type, double... data){
+        write(type, true, data);
+    }
+
+    public void write(String type, Point3 p){
+        write(type, p.x, p.y, p.z);
+    }
+}
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
+    private static final String TAG = "GRAY-POINT";
+    private final String rootPath = "/storage/emulated/0/AAAAAA/";
+
+    public static MainActivity activity;
+    private boolean WhiteBalanceOn = false;
+    private DataOutput LOG = new DataOutput(rootPath);
+    //是否录制标识
+    private boolean isRecording = false;
+
+    //原始视频保存路径
+    String fileUrl_o = rootPath+"video_org";
+    //处理视频保存路径
+    String fileUrl_imu = rootPath+"video_imu";
+    //原始视频
+    VideoWriter videoWriter_org = null;
+    //经过ium灰点漂移加光源融合后的视频
+    VideoWriter videoWriter_imu = null;
 
     private static final Scalar red      = new Scalar(255,  50,  50);
     private static final Scalar green    = new Scalar( 50, 255,  50);
@@ -44,12 +114,41 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private Quaternion curPose = null;
     private MatOfPoint2f preGrayPoints = new MatOfPoint2f();
     private MatOfPoint2f curGrayPoints = new MatOfPoint2f();
-    private double threshold = 0.001;//灰度指数小于阈值则加入灰点组,后续可以用堆排序实现灰点数量控制
-    private double L_f = 0;
-    private double L_ref = 0;
-    private double L_0_pre = 0;
-    private MatOfByte status = null;
-    private MatOfFloat err = null;
+    private int grayPointNumber = CONFIG.grayPointNumber;
+    private double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
+
+    // 当前帧单帧颜色估计结果
+    private Point3 L_0;
+    // 前一帧单帧光源颜色估计结果
+    private Point3 L_0_pre = new Point3(0,0,0);
+    // 前一帧最终光源颜色估计结果
+    private Point3 L_f_pre = new Point3(0,0,0);
+    // 当前帧最终光源估计结果
+    private Point3 L_f = new Point3(0,0,0);
+    // 当前帧加权平均后的参考结果
+    private Point3 L_ref = new Point3(0,0,0);
+
+
+    private MatOfByte status = new MatOfByte();
+    private MatOfFloat err = new MatOfFloat();
+
+    /**
+     * 用于优先队列排序的包装类
+     */
+    class WrapPoint extends Point{
+        public double value;
+
+        public double getValue() {
+            return value;
+        }
+
+        public WrapPoint(double x, double y, double value) {
+            this.x = x;
+            this.y = y;
+            this.value = value;
+        }
+    }
+    private final Comparator<WrapPoint> cmp = Comparator.comparingDouble(WrapPoint::getValue);
 
     @Override
     public void onCameraViewStarted(int width, int height) {
@@ -59,18 +158,223 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     public void onCameraViewStopped() {
     }
 
-    private int counter = 0;
     @Override
     public void onClick(View v) {
-        Mat save = new Mat();
-        Imgproc.cvtColor(curRGBFrame, save, Imgproc.COLOR_RGBA2BGR);
-        String filename = "/storage/emulated/0/Download/photo_"+ counter++ +".jpg";
-        Imgcodecs.imwrite(filename, save);
-        Toast.makeText(ImuListener.activity, "保存至"+filename, Toast.LENGTH_SHORT).show();
+        if (v.getId() == R.id.button) {
+            if(isRecording == false){
+                isRecording = true;
+                videoWriter_org = new VideoWriter();
+                videoWriter_imu = new VideoWriter();
+                videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                        new Size(960, 720),true);
+                videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                        new Size(960, 720),true);
+
+                ((TextView) activity.findViewById(R.id.button)).setText("结束录像");
+            }else{
+                isRecording = false;
+                videoWriter_org.release();
+                videoWriter_imu.release();
+
+                Toast.makeText(ImuListener.activity, "保存至:" + fileUrl_o + "以及" + fileUrl_imu,Toast.LENGTH_SHORT).show();
+                ((TextView) activity.findViewById(R.id.button)).setText("开始录像");
+            }
+        }
+        else if (v.getId() == R.id.switchMode){
+            WhiteBalanceOn = !WhiteBalanceOn;
+        }
     }
+
+    private double calAngel(Point3 a, Point3 b){
+        return Math.acos(a.dot(b)
+                /(Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z)
+                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z)));
+    }
+
+    private Point3 singleFrameLightEst(Mat frame, Mat draw){
+        List<Mat> channels = new ArrayList<>();
+        Core.split(frame, channels);
+        Mat redFrame = new Mat();
+        Mat blueFrame = new Mat();
+        Mat greenFrame = new Mat();
+        channels.get(2).convertTo(redFrame, CvType.CV_64F);
+        channels.get(1).convertTo(greenFrame, CvType.CV_64F);
+        channels.get(0).convertTo(blueFrame, CvType.CV_64F);
+
+        Size newSize = new Size(frame.cols()*downsampleFactor, frame.rows()*downsampleFactor);
+        Imgproc.resize(redFrame, redFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+        Imgproc.resize(blueFrame, blueFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+        Imgproc.resize(greenFrame, greenFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
+
+        Mat temp = new Mat(newSize, CvType.CV_64F);
+        Core.add(redFrame, greenFrame, temp);
+        Core.add(blueFrame, temp, temp);
+        Core.log(temp, temp);
+
+        Core.log(redFrame, redFrame);
+        Core.log(blueFrame, blueFrame);
+
+        Core.subtract(redFrame, temp, redFrame);
+        Core.subtract(blueFrame, temp, blueFrame);
+
+        // LoG
+        Imgproc.GaussianBlur(redFrame, redFrame, new Size(3,3), 2);
+        Imgproc.GaussianBlur(blueFrame, blueFrame, new Size(3,3), 2);
+        Imgproc.Laplacian(redFrame, redFrame, CvType.CV_64F, 1);
+        Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_64F, 1);
+
+        Core.pow(redFrame, 2, redFrame);
+        Core.pow(blueFrame, 2, blueFrame);
+        Core.add(redFrame, blueFrame, temp);
+        Core.sqrt(temp, temp);
+
+        PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
+        for (int i = 1; i < temp.rows()-1; i += 1)
+            for (int j = 1; j < temp.cols()-1; j += 1) {
+                grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
+            }
+
+        L_0 = new Point3(0,0,0);
+        List<Point> gps = new ArrayList<>();
+        for (int i = 0; i < grayPointNumber; i++) {
+            Point p = grayPoints.poll();
+            gps.add(p);
+
+            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
+            L_0.x += BGR[2];
+            L_0.y += BGR[1];
+            L_0.z += BGR[0];
+
+            Imgproc.circle(draw, p, 1, green, -1);
+        }
+        L_0.x /= grayPointNumber;
+        L_0.y /= grayPointNumber;
+        L_0.z /= grayPointNumber;
+
+        curGrayPoints.fromList(gps);
+        return L_0;
+    }
+
+    private Point3 grayPointShiftLightEst(Mat result){
+        curGrayPoints = new MatOfPoint2f();
+        Video.calcOpticalFlowPyrLK(preGrayFrame, curGrayFrame, preGrayPoints, curGrayPoints, status, err);
+
+        // 计算旋转矩阵
+        Mat R_cur = curPose.quaternionToR();
+        Mat R_pre = prePose.quaternionToR();
+        Mat R = R_cur.matMul(R_pre.inv());
+        Mat cameraR = CONFIG.innerMat.matMul(R).matMul(CONFIG.innerMat.inv());
+        //Mat rotateMat = CONFIG.M1.inv().matMul(cameraR).matMul(CONFIG.M2.inv());
+
+        // 对个特征点计算旋转分量
+        Point[] pre = preGrayPoints.toArray(), cur = curGrayPoints.toArray();
+        List<Point> shiftedGrayPoints = new ArrayList<>();
+        byte[] s = status.toArray();
+        for (int i = 0; i < pre.length; i++) {
+            if (s[i] == 1) {
+                // 当前坐标
+                Mat location = new Mat(3, 1, CvType.CV_64F);
+                double[] temp = {pre[i].x, pre[i].y, 1.0f};
+                location.put(0, 0, temp);
+
+                // 乘上旋转矩阵，获得旋转后坐标
+                Mat rotateLocation = cameraR.matMul(location);
+
+                // 归一化旋转后坐标，旋转后的成像平面坐标
+                rotateLocation.get(0, 0, temp);
+                double x_rotate = temp[0] / temp[2];
+                double y_rotate = temp[1] / temp[2];
+
+                // 计算旋转分量、平移分量
+                double u_trans = cur[i].x - x_rotate;
+                double v_trans = cur[i].y - y_rotate;
+
+                //更新灰点位置，得到映射过后的灰点集合,判断是否出界
+                Point shifted = new Point(pre[i].x + u_trans, pre[i].y + v_trans);
+                if (0<=shifted.x && shifted.x<curRGBFrame.rows() && 0<=shifted.y && shifted.y<curRGBFrame.cols()){
+                    shiftedGrayPoints.add(shifted);
+                    Imgproc.circle(result, shifted, 1, red, -1);
+                }
+            }
+        }
+
+        if(shiftedGrayPoints.size() < pre.length/2){
+            curGrayPoints.fromArray(pre);//多数出界回退到上一帧灰点位置集合
+        }else{
+            curGrayPoints.fromList(shiftedGrayPoints);
+        }
+
+        //计算当前帧的L_s
+        Point3 L_s = new Point3(0,0,0);
+        Point[] gps = curGrayPoints.toArray();
+        for (Point grayPoint : gps){
+            double[] RGB = curRGBFrame.get((int) grayPoint.x, (int) grayPoint.y);
+            L_s.x += RGB[2];
+            L_s.y += RGB[1];
+            L_s.z += RGB[0];
+        }
+        L_s.x /= gps.length;
+        L_s.y /= gps.length;
+        L_s.z /= gps.length;
+        return L_s;
+    }
+
+    private Point3 correctLight(){
+        L_f.x = 0;
+        L_f.y = 0;
+        L_f.z = 0;
+        PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
+        for(int i = 0; i < curRGBFrame.rows(); i = i + 5){
+            for(int j = 0; j < curRGBFrame.cols(); j = j + 5){
+                double[] pix = curRGBFrame.get(i, j);
+                //计算灰度指数
+                Point3 pix3 = new Point3(pix[2], pix[1], pix[0]);
+                double g = calAngel(pix3, L_ref);
+                grayPoints.add(new WrapPoint(i, j, g));
+            }
+        }
+
+        for (int i = 0; i < grayPointNumber; i++) {
+            WrapPoint p = grayPoints.poll();
+            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
+
+            L_f.x += BGR[2];
+            L_f.y += BGR[1];
+            L_f.z += BGR[0];
+        }
+
+        L_f.x /= grayPointNumber;
+        L_f.y /= grayPointNumber;
+        L_f.z /= grayPointNumber;
+        return L_f;
+    }
+
+    private Mat adjustWhiteBalance(Mat frame, Point3 L_f){
+        //进行白平衡
+        List<Mat> channels = new ArrayList<>();
+        Core.split(frame, channels);
+        double LightSourceMean = (L_f.x + L_f.y + L_f.z)/3.0;
+
+        Scalar gainR = new Scalar(LightSourceMean / L_f.x);
+        Scalar gainG = new Scalar(LightSourceMean / L_f.y);
+        Scalar gainB = new Scalar(LightSourceMean / L_f.z);
+        LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
+        Scalar[] gain = {gainB, gainG, gainR};
+        for(int i = 0; i < 3; i++){
+            Mat channel = channels.get(i);
+            Core.multiply(channel, gain[i], channel);
+        }
+        Core.merge(channels, frame);
+        return frame;
+    }
+
     //灰点检测，光源融合部分
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+//        if (!WhiteBalanceOn){
+//            preGrayPoints = new MatOfPoint2f();
+//            return inputFrame.rgba();
+//        }
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
         curPose = ImuListener.getInstance().getPose();
@@ -78,129 +382,68 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
         preRGBFrame = curRGBFrame;
 
-        //计算L_0
-        List<Point> pointList = new ArrayList<>();//储存检测到的灰点坐标
-        double L_0 = 0;//计算单帧灰点检测估计的光源颜色
-        for(int i = 0; i < curRGBFrame.rows(); i = i + 10){
-            for(int j = 0; j < curRGBFrame.cols(); j = j + 10){
-                int count = 0;//对应四个方向
-                double sumb = 0;
-                double sumr = 0;
-                double[] pix = curRGBFrame.get(i, j);
-                double I = pix[0] + pix[1] + pix[2];
-                double t = Math.log(pix[0]/I);
-                double p = Math.log(pix[2]/I);
-                if(curRGBFrame.get(i - 1, j) != null){
-                    count = count + 1;
-                    double I1 = curRGBFrame.get(i - 1, j)[0] + curRGBFrame.get(i - 1, j)[1] + curRGBFrame.get(i - 1, j)[2];
-                    double t1 = Math.log(curRGBFrame.get(i - 1, j)[0]/I1);
-                    double p1 = Math.log(curRGBFrame.get(i - 1, j)[2]/I1);
-                    sumb = sumb + t1 - t;
-                    sumr = sumr + p1 - p;
-                }
-                if(curRGBFrame.get(i, j - 1) != null){
-                    count = count + 1;
-                    double I2 = curRGBFrame.get(i, j - 1)[0] + curRGBFrame.get(i, j - 1)[1] + curRGBFrame.get(i, j - 1)[2];
-                    double t2 = Math.log(curRGBFrame.get(i, j - 1)[0]/I2);
-                    double p2 = Math.log(curRGBFrame.get(i, j - 1)[2]/I2);
-                    sumb = sumb + t2 - t;
-                    sumr = sumr + p2 - p;
-                }
-                if(curRGBFrame.get(i, j + 1) != null){
-                    count = count + 1;
-                    double I3 = curRGBFrame.get(i, j + 1)[0] + curRGBFrame.get(i, j + 1)[1] + curRGBFrame.get(i, j + 1)[2];
-                    double t3 = Math.log(curRGBFrame.get(i, j + 1)[0]/I3);
-                    double p3 = Math.log(curRGBFrame.get(i, j + 1)[2]/I3);
-                    sumb = sumb + t3 - t;
-                    sumr = sumr + p3 - p;
-                }
-                if(curRGBFrame.get(i + 1, j) != null){
-                    count = count + 1;
-                    double I4 = curRGBFrame.get(i + 1, j)[0] + curRGBFrame.get(i + 1, j)[1] + curRGBFrame.get(i + 1, j)[2];
-                    double t4 = Math.log(curRGBFrame.get(i + 1, j)[0]/I4);
-                    double p4 = Math.log(curRGBFrame.get(i + 1, j)[2]/I4);
-                    sumb = sumb + t4 - t;
-                    sumr = sumr + p4 - p;
-                }
-                double G = Math.sqrt(Math.pow(sumb/count, 2) + Math.pow(sumr/count, 2));//该点的灰度指数
-                if(G <= threshold){
-                    pointList.add(new Point(i, j));
-                    L_0 = L_0 + I;
-                }
+        singleFrameLightEst(curRGBFrame, result);
+//        if(isRecording) LOG.write("L_0", L_0);
 
-            }
-        }
-        curGrayPoints.fromList(pointList);
-        L_0 = L_0/curGrayPoints.toList().size();//单帧光源颜色估计
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
+
             // 计算光流，计算映射过后的灰点位置集合
-            curGrayPoints = new MatOfPoint2f();
-            status = new MatOfByte();
-            err = new MatOfFloat();
-            Video.calcOpticalFlowPyrLK(preGrayFrame, curGrayFrame, preGrayPoints, curGrayPoints, status, err);
+            Point3 L_s = grayPointShiftLightEst(result);
 
-            // 计算旋转矩阵
-            Mat R_cur = curPose.quaternionToR();
-            Mat R_pre = prePose.quaternionToR();
-            Mat R = R_cur.matMul(R_pre.inv());
-            Mat cameraR = CONFIG.innerMat.matMul(R).matMul(CONFIG.innerMat.inv());
-            //Mat rotateMat = CONFIG.M1.inv().matMul(cameraR).matMul(CONFIG.M2.inv());
+            //计算角误差与加权权重
+            double theta_s = calAngel(L_f_pre, L_s);
+            double theta_0 = calAngel(L_0_pre, L_0);
+            double w = Math.exp(-10000 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
 
-            // 对个特征点计算旋转分量
-            Point[] pre = preGrayPoints.toArray(), cur = curGrayPoints.toArray();
-            List<Point> mapped = new ArrayList<>();
-            byte[] s = status.toArray();
-            for (int i = 0; i < pre.length; i++) {
-            //Imgproc.circle(curRGBFrame, pre[i], 3, green, Imgproc.FILLED);
-                if (s[i] == 1) {
-                    // 当前坐标
-                    Mat location = new Mat(3, 1, CvType.CV_64F);
-                    double[] temp = {pre[i].x, pre[i].y, 1.0f};
-                    location.put(0, 0, temp);
+            //加权融合光源
+            L_ref = new Point3(
+                    L_f_pre.x * w + L_0.x * (1-w),
+                    L_f_pre.y * w + L_0.y * (1-w),
+                    L_f_pre.z * w + L_0.z * (1-w)
+            );
 
-                    // 乘上旋转矩阵，获得旋转后坐标
-                    Mat rotateLocation = cameraR.matMul(location);
+            //根据融合光源估计重新进行灰点检测
+            correctLight();
 
-                    // 归一化旋转后坐标，旋转后的成像平面坐标
-                    rotateLocation.get(0, 0, temp);
-                    double x_rotate = temp[0] / temp[2];
-                    double y_rotate = temp[1] / temp[2];
+            adjustWhiteBalance(result, L_f);
+            L_f_pre = L_f;
 
-                    // 计算旋转分量、平移分量
-                    double u_trans = cur[i].x - x_rotate;
-                    double v_trans = cur[i].y - y_rotate;
+            if (isRecording) {
+//                LOG.write("L_f_pre", L_f_pre);
+//                LOG.write("L_0_pre", L_0_pre);
+//                LOG.write("L_s", L_s);
+//                LOG.write("L_ref", L_ref);
+//                LOG.write("L_f", L_f)
+                LOG.write("ts", false, theta_s);
+                LOG.write("t0", false, theta_0);
+                LOG.write("w", false, w);
 
-                    //更新灰点位置，得到映射过后的灰点集合,判断是否出界
-                    if(0 <= pre[i].x + u_trans && pre[i].x + u_trans < curRGBFrame.rows() && pre[i].y + v_trans >= 0 && pre[i].y + v_trans < curRGBFrame.cols()){
-                        //未出界，加入到映射灰点集
-                        Point added = new Point(pre[i].x + u_trans, pre[i].y + v_trans);
-                        mapped.add(added);
-                        Imgproc.circle(result, added, 1, red, -1);
-                    }
-                }
+                int width = 960;
+                int radius = 40;
+
+                Imgproc.circle(result, new Point(width-3*radius, radius),      radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
+                Imgproc.circle(result, new Point(width-radius, radius),        radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
+                Imgproc.circle(result, new Point(width-3*radius, 3*radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
+                Imgproc.circle(result, new Point(width-radius, 3*radius),   radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
+
+                Imgproc.putText(result, "L0       Ls", new Point(width-3*radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+                Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
             }
-            if(mapped.size() < pre.length/2){
-                curGrayPoints.fromArray(pre);//多数出界回退到上一帧灰点位置集合
-            }else{
-                curGrayPoints.fromList(mapped);
-            }
-            //计算当前帧的L_s
-            double L_s = 0;
-            Point[] ls = curGrayPoints.toArray();
-            for(int i = 0; i < curGrayPoints.toArray().length; i++){
-                L_s = L_s + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[0] + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[1] + curRGBFrame.get((int)ls[i].x, (int)ls[i].y)[2];
-            }
-            L_s = L_s/ ls.length;
-
-        }else{//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
-            L_f = L_0;
-            L_0_pre = L_0;
+        } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
+            L_f_pre = L_0;
         }
+
+        L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
+
         preGrayFrame = curGrayFrame;
         prePose = curPose;
+        if(isRecording){
+            videoWriter_org.write(inputFrame.rgba());
+            videoWriter_imu.write(result);
+        }
 
-        return result;
+        return WhiteBalanceOn ? result : inputFrame.rgba();
     }
 }

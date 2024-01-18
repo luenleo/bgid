@@ -33,7 +33,10 @@ public class MainActivity extends CameraActivity {
 
         OpenCVLoader.initDebug();
 
+        FrameProcess.activity = this;
         Button button = findViewById(R.id.button);
+        button.setOnClickListener(FrameProcess.getInstance());
+        button = findViewById(R.id.switchMode);
         button.setOnClickListener(FrameProcess.getInstance());
 
         // CameraViw

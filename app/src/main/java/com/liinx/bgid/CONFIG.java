@@ -11,6 +11,9 @@ public class CONFIG {
     public static final int terminalTime = 15;
     // 聚类权重tau
     public static final float tau = 0.1f;
+    // 灰度指数的threshold
+    public static final int grayPointNumber = 100;
+    public static final double downsampleFactor = 0.25;
 
     /* ----项目配置---- */
     public static final String accePath = "/storage/emulated/0/Download/acce.txt";
