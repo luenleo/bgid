@@ -2,6 +2,7 @@ package com.liinx.bgid;
 
 import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.liinx.bgid.utils.Quaternion;
@@ -20,6 +21,8 @@ import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
+import org.opencv.videoio.VideoWriter;
+import org.opencv.videoio.Videoio;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -69,8 +72,22 @@ class DataOutput{
 }
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
-    private DataOutput LOG = new DataOutput("/storage/emulated/0/AAAAAA/");
     private static final String TAG = "GRAY-POINT";
+
+    public static MainActivity activity;
+    private boolean WhiteBalanceOn = false;
+    private DataOutput LOG = new DataOutput("/storage/emulated/0/AAAAAA/");
+    //是否录制标识
+    private boolean isRecording = false;
+
+    //原始视频保存路径
+    String fileUrl_o = "/storage/emulated/0/AAAAAA/video_org";
+    //处理视频保存路径
+    String fileUrl_imu = "/storage/emulated/0/AAAAAA/video_imu";
+    //原始视频
+    VideoWriter videoWriter_org = null;
+    //经过ium灰点漂移加光源融合后的视频
+    VideoWriter videoWriter_imu = null;
 
     private static final Scalar red      = new Scalar(255,  50,  50);
     private static final Scalar green    = new Scalar( 50, 255,  50);
@@ -82,8 +99,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     public static FrameProcess getInstance(){
         return fp;
     }
-
-    private boolean WhiteBalanceOn = false;
 
     private Mat preRGBFrame = null;
     private Mat preGrayFrame = null;
@@ -137,19 +152,30 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     public void onCameraViewStopped() {
     }
 
-    private int counter = 0;
     @Override
     public void onClick(View v) {
         if (v.getId() == R.id.button) {
-                Mat save = new Mat();
-                Imgproc.cvtColor(curRGBFrame, save, Imgproc.COLOR_RGBA2BGR);
-                String filename = "/storage/emulated/0/Download/photo_"+ counter++ +".jpg";
-                Imgcodecs.imwrite(filename, save);
-                Toast.makeText(ImuListener.activity, "保存至"+filename, Toast.LENGTH_SHORT).show();
+            if(isRecording == false){
+                isRecording = true;
+                videoWriter_org = new VideoWriter();
+                videoWriter_imu = new VideoWriter();
+                videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                        new Size(960, 720),true);
+                videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                        new Size(960, 720),true);
+
+                ((TextView) activity.findViewById(R.id.button)).setText("结束录像");
+            }else{
+                isRecording = false;
+                videoWriter_org.release();
+                videoWriter_imu.release();
+
+                Toast.makeText(ImuListener.activity, "保存至:" + fileUrl_o + "以及" + fileUrl_imu,Toast.LENGTH_SHORT).show();
+                ((TextView) activity.findViewById(R.id.button)).setText("开始录像");
             }
+        }
         else if (v.getId() == R.id.switchMode){
             WhiteBalanceOn = !WhiteBalanceOn;
-            Toast.makeText(ImuListener.activity, WhiteBalanceOn?"打开白平衡处理":"关闭白平衡处理", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -339,10 +365,10 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     //灰点检测，光源融合部分
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        if (!WhiteBalanceOn){
-            preGrayPoints = new MatOfPoint2f();
-            return inputFrame.rgba();
-        }
+//        if (!WhiteBalanceOn){
+//            preGrayPoints = new MatOfPoint2f();
+//            return inputFrame.rgba();
+//        }
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
         curPose = ImuListener.getInstance().getPose();
@@ -393,6 +419,11 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         preGrayFrame = curGrayFrame;
         prePose = curPose;
-        return result;
+        if(isRecording){
+            videoWriter_org.write(inputFrame.rgba());
+            videoWriter_imu.write(result);
+        }
+
+        return WhiteBalanceOn ? result : inputFrame.rgba();
     }
 }
