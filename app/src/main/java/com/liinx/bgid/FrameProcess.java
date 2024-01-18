@@ -197,9 +197,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Mat redFrame = new Mat();
         Mat blueFrame = new Mat();
         Mat greenFrame = new Mat();
-        channels.get(2).convertTo(redFrame, CvType.CV_64F);
+        channels.get(0).convertTo(redFrame, CvType.CV_64F);
         channels.get(1).convertTo(greenFrame, CvType.CV_64F);
-        channels.get(0).convertTo(blueFrame, CvType.CV_64F);
+        channels.get(2).convertTo(blueFrame, CvType.CV_64F);
 
         Size newSize = new Size(frame.cols()*downsampleFactor, frame.rows()*downsampleFactor);
         Imgproc.resize(redFrame, redFrame, newSize,0, 0, Imgproc.INTER_LINEAR);
@@ -240,10 +240,10 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             Point p = grayPoints.poll();
             gps.add(p);
 
-            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
-            L_0.x += BGR[2];
-            L_0.y += BGR[1];
-            L_0.z += BGR[0];
+            double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
+            L_0.x += RGB[0];
+            L_0.y += RGB[1];
+            L_0.z += RGB[2];
 
             Imgproc.circle(draw, p, 1, green, -1);
         }
@@ -309,9 +309,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Point[] gps = curGrayPoints.toArray();
         for (Point grayPoint : gps){
             double[] RGB = curRGBFrame.get((int) grayPoint.x, (int) grayPoint.y);
-            L_s.x += RGB[2];
+            L_s.x += RGB[0];
             L_s.y += RGB[1];
-            L_s.z += RGB[0];
+            L_s.z += RGB[2];
         }
         L_s.x /= gps.length;
         L_s.y /= gps.length;
@@ -328,7 +328,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             for(int j = 0; j < curRGBFrame.cols(); j = j + 5){
                 double[] pix = curRGBFrame.get(i, j);
                 //计算灰度指数
-                Point3 pix3 = new Point3(pix[2], pix[1], pix[0]);
+                Point3 pix3 = new Point3(pix[0], pix[1], pix[2]);
                 double g = calAngel(pix3, L_ref);
                 grayPoints.add(new WrapPoint(i, j, g));
             }
@@ -336,11 +336,11 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         for (int i = 0; i < grayPointNumber; i++) {
             WrapPoint p = grayPoints.poll();
-            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
+            double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
 
-            L_f.x += BGR[2];
-            L_f.y += BGR[1];
-            L_f.z += BGR[0];
+            L_f.x += RGB[0];
+            L_f.y += RGB[1];
+            L_f.z += RGB[2];
         }
 
         L_f.x /= grayPointNumber;
@@ -359,7 +359,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
         if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
-        Scalar[] gain = {gainB, gainG, gainR};
+        Scalar[] gain = {gainR, gainG, gainB};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
             Core.multiply(channel, gain[i], channel);
@@ -382,7 +382,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
 
         singleFrameLightEst(curRGBFrame, result);
-        if(isRecording) LOG.write("L_0", L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
@@ -409,6 +408,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_f_pre = L_f;
 
             if (isRecording) {
+                LOG.write("L_0", L_0);
                 LOG.write("L_f_pre", L_f_pre);
                 LOG.write("L_0_pre", L_0_pre);
                 LOG.write("L_s", L_s);
