@@ -165,9 +165,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 isRecording = true;
                 videoWriter_org = new VideoWriter();
                 videoWriter_imu = new VideoWriter();
-                videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 10,
                         new Size(960, 720),true);
-                videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
+                videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 10,
                         new Size(960, 720),true);
 
                 ((TextView) activity.findViewById(R.id.button)).setText("结束录像");
@@ -358,7 +358,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainR = new Scalar(LightSourceMean / L_f.x);
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
-        LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
+        if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
         Scalar[] gain = {gainB, gainG, gainR};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
@@ -380,10 +380,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         curPose = ImuListener.getInstance().getPose();
 
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
-        preRGBFrame = curRGBFrame;
 
         singleFrameLightEst(curRGBFrame, result);
-//        if(isRecording) LOG.write("L_0", L_0);
+        if(isRecording) LOG.write("L_0", L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
@@ -410,11 +409,11 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_f_pre = L_f;
 
             if (isRecording) {
-//                LOG.write("L_f_pre", L_f_pre);
-//                LOG.write("L_0_pre", L_0_pre);
-//                LOG.write("L_s", L_s);
-//                LOG.write("L_ref", L_ref);
-//                LOG.write("L_f", L_f)
+                LOG.write("L_f_pre", L_f_pre);
+                LOG.write("L_0_pre", L_0_pre);
+                LOG.write("L_s", L_s);
+                LOG.write("L_ref", L_ref);
+                LOG.write("L_f", L_f);
                 LOG.write("ts", false, theta_s);
                 LOG.write("t0", false, theta_0);
                 LOG.write("w", false, w);
@@ -434,15 +433,17 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_f_pre = L_0;
         }
 
+        if(isRecording){
+            videoWriter_org.write(preRGBFrame);
+            videoWriter_imu.write(result);
+        }
+
         L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
 
         preGrayFrame = curGrayFrame;
         prePose = curPose;
-        if(isRecording){
-            videoWriter_org.write(inputFrame.rgba());
-            videoWriter_imu.write(result);
-        }
+        preRGBFrame = curRGBFrame;
 
         return WhiteBalanceOn ? result : inputFrame.rgba();
     }
