@@ -12,7 +12,7 @@ public class CONFIG {
     // 聚类权重tau
     public static final float tau = 0.1f;
     // 灰度指数的threshold
-    public static final int grayPointNumber = 100;
+    public static final int grayPointNumber = 400;
     public static final double downsampleFactor = 0.25;
 
     /* ----项目配置---- */
