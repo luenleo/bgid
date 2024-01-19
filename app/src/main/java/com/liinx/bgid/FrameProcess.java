@@ -408,6 +408,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
+            LOG.write("L_0r", L_0.x/L_0_pre.x, L_0.y/L_0_pre.y, L_0.z/L_0_pre.z);
+            LOG.write("L_0s", L_0.x-L_0_pre.x, L_0.y-L_0_pre.y, L_0.z-L_0_pre.z);
 
             if (isRecording) {
 //                LOG.write("L_f_pre", L_f_pre);
