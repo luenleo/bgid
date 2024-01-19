@@ -186,9 +186,10 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     }
 
     private double calAngel(Point3 a, Point3 b){
-        return Math.acos(a.dot(b)
+        double temp = a.dot(b)
                 /(Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z)
-                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z)));
+                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z));
+        return Math.acos(temp>1 ?1 :temp);
     }
 
     private Point3 singleFrameLightEst(Mat frame, Mat draw){
