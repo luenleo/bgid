@@ -240,28 +240,25 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Imgproc.Laplacian(redFrame, redFrame, CvType.CV_64F, 1);
         Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_64F, 1);
 
-        Core.pow(redFrame, 2, redFrame);
-        Core.pow(blueFrame, 2, blueFrame);
-        Core.add(redFrame, blueFrame, temp);
+        Mat temp1 = new Mat(newSize, CvType.CV_64F);
+        Mat temp2 = new Mat(newSize, CvType.CV_64F);
+        Core.pow(redFrame, 2, temp1);
+        Core.pow(blueFrame, 2, temp2);
+        Core.add(temp1, temp2, temp);
         Core.sqrt(temp, temp);
 
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for (int i = 1; i < temp.rows()-1; i += 1)
             for (int j = 1; j < temp.cols()-1; j += 1) {
-                grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
+                if (redFrame.get(i, j)[0] > contrastThreshold && blueFrame.get(i, j)[0] > contrastThreshold)
+                    grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
             }
+        Log.i(TAG, "大小"+grayPoints.size());
 
         L_0 = new Point3(0,0,0);
         List<Point> gps = new ArrayList<>();
         for (int i = 0; i < grayPointNumber; ) {
             Point p = grayPoints.poll();
-            if(p == null){
-                break;
-            }
-            //添加判断是否为黑点，排除有通道为零的点
-            if(curRGBFrame.get((int) p.x, (int) p.y)[0] == 0 || curRGBFrame.get((int) p.x, (int) p.y)[1] == 0 || curRGBFrame.get((int) p.x, (int) p.y)[2] == 0){
-                continue;
-            }
             gps.add(p);
 
             double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
@@ -418,7 +415,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             //计算角误差与加权权重
             double theta_s = calAngel(L_f_pre, L_s);
             double theta_0 = calAngel(L_0_pre, L_0);
-            double w = Math.exp(-10000 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+            double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
 
             //加权融合光源
             L_ref = new Point3(
