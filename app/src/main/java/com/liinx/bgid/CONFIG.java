@@ -12,16 +12,11 @@ public class CONFIG {
     // 聚类权重tau
     public static final float tau = 0.1f;
     // 灰度指数的threshold
-    public static final int grayPointNumber = 400;
+    public static final int grayPointNumber = 100;
     public static final double downsampleFactor = 0.25;
+    public static final double contrastThreshold = 1e-20;
 
     /* ----项目配置---- */
-    public static final String accePath = "/storage/emulated/0/Download/acce.txt";
-    public static final String gyroPath = "/storage/emulated/0/Download/gyro.txt";
-    public static final String videoPath = "/storage/emulated/0/Download/video.mp4";
-    public static final String timestampPath = "/storage/emulated/0/Download/ts.txt";
-    public static final String featurePath = "/storage/emulated/0/Download/feature.dat";
-    public static final String outputPath = "/storage/emulated/0/Download/result.avi";
     public static final float xRate = 1920.0f / 1280.0f;
     public static final float yRate = 1080.0f / 720.0f;
     public static final int videoHeight = 720;
