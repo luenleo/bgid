@@ -175,8 +175,11 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                         new Size(960, 720),true);
                 videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
                         new Size(960, 720),true);
-                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M','J','P','G'),30,
+                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'),30,
                         new Size(960,720),true);
+                if(videoWriter_org.isOpened()&&videoWriter_SWB.isOpened()&&videoWriter_SWB.isOpened()){
+                    Toast.makeText(ImuListener.activity, "开始录像",Toast.LENGTH_SHORT).show();
+                }
 
                 ((TextView) activity.findViewById(R.id.button)).setText("结束录像");
             }else{
@@ -434,9 +437,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 //                LOG.write("L_s", L_s);
 //                LOG.write("L_ref", L_ref);
 //                LOG.write("L_f", L_f)
-                LOG.write("ts", false, theta_s);
-                LOG.write("t0", false, theta_0);
-                LOG.write("w", false, w);
+//                LOG.write("ts", false, theta_s);
+//                LOG.write("t0", false, theta_0);
+//                LOG.write("w", false, w);
 
                 int width = 960;
                 int radius = 40;
@@ -455,7 +458,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 
         L_0_pre = L_0;
         preGrayPoints = curGrayPoints;
-
         preGrayFrame = curGrayFrame;
         prePose = curPose;
         if(isRecording){
