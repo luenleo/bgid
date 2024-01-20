@@ -77,15 +77,10 @@ class DataOutput{
 }
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
+    //<editor-fold desc="输出相关参数">
     private static final String TAG = "GRAY-POINT";
-    private final String rootPath = "/storage/emulated/0/Download/";
-
-    public static MainActivity activity;
-    private boolean WhiteBalanceOn = false;
+    private final String rootPath = "/storage/emulated/0/AAAAAA/";
     private DataOutput LOG = new DataOutput(rootPath);
-    //是否录制标识
-    private boolean isRecording = false;
-
     //原始视频保存路径
     String fileUrl_o = rootPath+"video_org";
     //处理视频保存路径
@@ -103,13 +98,27 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private static final Scalar green    = new Scalar( 50, 255,  50);
     private static final Scalar blue     = new Scalar( 50,  50, 255);
     private static final Scalar white    = new Scalar(255, 255, 255);
+    //</editor-fold>
 
+    //<editor-fold desc="系统状态以及算法参数">
+    public static MainActivity activity;
+    private boolean WhiteBalanceOn = false;
+    //是否录制标识
+    private boolean isRecording = false;
+    private int grayPointNumber = CONFIG.grayPointNumber;
+    private double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
+    private double contrastThreshold = CONFIG.contrastThreshold;
+    //</editor-fold>
+
+    //<editor-fold desc="单例">
     private static final FrameProcess fp = new FrameProcess();
     private FrameProcess(){}
     public static FrameProcess getInstance(){
         return fp;
     }
+    //</editor-fold>
 
+    //<editor-fold desc="全局变量">
     private Mat preRGBFrame = null;
     private Mat preGrayFrame = null;
     private Mat curRGBFrame = null;
@@ -119,8 +128,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private Quaternion curPose = null;
     private MatOfPoint2f preGrayPoints = new MatOfPoint2f();
     private MatOfPoint2f curGrayPoints = new MatOfPoint2f();
-    private int grayPointNumber = CONFIG.grayPointNumber;
-    private double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
 
     // 当前帧单帧颜色估计结果
     private Point3 L_0;
@@ -133,9 +140,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     // 当前帧加权平均后的参考结果
     private Point3 L_ref = new Point3(0,0,0);
 
-
     private MatOfByte status = new MatOfByte();
     private MatOfFloat err = new MatOfFloat();
+    //</editor-fold>
 
     /**
      * 用于优先队列排序的包装类
@@ -175,7 +182,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                         new Size(960, 720),true);
                 videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
                         new Size(960, 720),true);
-                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'),30,
+                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M','J','P','G'),30,
                         new Size(960,720),true);
                 if(videoWriter_org.isOpened()&&videoWriter_SWB.isOpened()&&videoWriter_SWB.isOpened()){
                     Toast.makeText(ImuListener.activity, "开始录像",Toast.LENGTH_SHORT).show();
@@ -198,9 +205,10 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     }
 
     private double calAngel(Point3 a, Point3 b){
-        return Math.acos(a.dot(b)
+        double temp = a.dot(b)
                 /(Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z)
-                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z)));
+                *Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z));
+        return Math.acos(temp>1 ?1 :temp);
     }
 
     private Point3 singleFrameLightEst(Mat frame, Mat draw){
@@ -235,34 +243,31 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Imgproc.Laplacian(redFrame, redFrame, CvType.CV_64F, 1);
         Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_64F, 1);
 
-        Core.pow(redFrame, 2, redFrame);
-        Core.pow(blueFrame, 2, blueFrame);
-        Core.add(redFrame, blueFrame, temp);
+        Mat temp1 = new Mat(newSize, CvType.CV_64F);
+        Mat temp2 = new Mat(newSize, CvType.CV_64F);
+        Core.pow(redFrame, 2, temp1);
+        Core.pow(blueFrame, 2, temp2);
+        Core.add(temp1, temp2, temp);
         Core.sqrt(temp, temp);
 
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for (int i = 1; i < temp.rows()-1; i += 1)
             for (int j = 1; j < temp.cols()-1; j += 1) {
-                grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
+                if (redFrame.get(i, j)[0] > contrastThreshold && blueFrame.get(i, j)[0] > contrastThreshold)
+                    grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
             }
+        Log.i(TAG, "大小"+grayPoints.size());
 
         L_0 = new Point3(0,0,0);
         List<Point> gps = new ArrayList<>();
         for (int i = 0; i < grayPointNumber; ) {
             Point p = grayPoints.poll();
-            if(p == null){
-                break;
-            }
-            //添加判断是否为黑点，排除有通道为零的点
-            if(curRGBFrame.get((int) p.x, (int) p.y)[0] == 0 || curRGBFrame.get((int) p.x, (int) p.y)[1] == 0 || curRGBFrame.get((int) p.x, (int) p.y)[2] == 0){
-                continue;
-            }
             gps.add(p);
 
-            double[] BGR = curRGBFrame.get((int) p.x, (int) p.y);
-            L_0.x += BGR[0];
-            L_0.y += BGR[1];
-            L_0.z += BGR[2];
+            double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
+            L_0.x += RGB[0];
+            L_0.y += RGB[1];
+            L_0.z += RGB[2];
 
             Imgproc.circle(draw, p, 1, green, -1);
             i++;
@@ -378,7 +383,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainR = new Scalar(LightSourceMean / L_f.x);
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
-        LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
+        if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
         Scalar[] gain = {gainR, gainG, gainB};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
@@ -401,10 +406,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         curPose = ImuListener.getInstance().getPose();
 
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
-        preRGBFrame = curRGBFrame;
 
         singleFrameLightEst(curRGBFrame, result);
-//        if(isRecording) LOG.write("L_0", L_0);
 
         //非第一帧，有前一帧
         if (!preGrayPoints.empty()){
@@ -415,7 +418,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             //计算角误差与加权权重
             double theta_s = calAngel(L_f_pre, L_s);
             double theta_0 = calAngel(L_0_pre, L_0);
-            double w = Math.exp(-10000 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+            double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
 
             //加权融合光源
             L_ref = new Point3(
@@ -431,27 +434,34 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
 
+            //<editor-fold desc="输出相关代码，与算法无关">
+            int width = 960;
+            int radius = 40;
+
+            Imgproc.circle(result, new Point(width-3*radius, radius),      radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
+            Imgproc.circle(result, new Point(width-radius, radius),        radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
+            Imgproc.circle(result, new Point(width-3*radius, 3*radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
+            Imgproc.circle(result, new Point(width-radius, 3*radius),   radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
+
+            Imgproc.putText(result, "L0       Ls", new Point(width-3*radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+            Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+
             if (isRecording) {
-//                LOG.write("L_f_pre", L_f_pre);
-//                LOG.write("L_0_pre", L_0_pre);
-//                LOG.write("L_s", L_s);
-//                LOG.write("L_ref", L_ref);
-//                LOG.write("L_f", L_f)
-//                LOG.write("ts", false, theta_s);
-//                LOG.write("t0", false, theta_0);
-//                LOG.write("w", false, w);
+                LOG.write("L_0", L_0);
+                LOG.write("L_f_pre", L_f_pre);
+                LOG.write("L_0_pre", L_0_pre);
+                LOG.write("L_s", L_s);
+                LOG.write("L_ref", L_ref);
+                LOG.write("L_f", L_f);
+                LOG.write("ts", false, theta_s);
+                LOG.write("t0", false, theta_0);
+                LOG.write("w", false, w);
 
-                int width = 960;
-                int radius = 40;
-
-                Imgproc.circle(result, new Point(width-3*radius, radius),      radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
-                Imgproc.circle(result, new Point(width-radius, radius),        radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
-                Imgproc.circle(result, new Point(width-3*radius, 3*radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
-                Imgproc.circle(result, new Point(width-radius, 3*radius),   radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
-
-                Imgproc.putText(result, "L0       Ls", new Point(width-3*radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
-                Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+                videoWriter_org.write(preRGBFrame);
+                videoWriter_imu.write(result);
+                videoWriter_SWB.write(SWB_only);
             }
+            //</editor-fold>
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
             L_f_pre = L_0;
         }
@@ -460,11 +470,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         preGrayPoints = curGrayPoints;
         preGrayFrame = curGrayFrame;
         prePose = curPose;
-        if(isRecording){
-            videoWriter_org.write(inputFrame.rgba());
-            videoWriter_imu.write(result);
-            videoWriter_SWB.write(SWB_only);
-        }
+        preRGBFrame = curRGBFrame;
 
         return WhiteBalanceOn ? result : inputFrame.rgba();
     }
