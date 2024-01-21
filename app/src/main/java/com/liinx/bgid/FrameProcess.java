@@ -399,7 +399,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
 //        }
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
-        SWB_only = inputFrame.rgba();
         curPose = ImuListener.getInstance().getPose();
 
         Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
@@ -427,7 +426,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             //根据融合光源估计重新进行灰点检测
             correctLight();
 
-            adjustWhiteBalance(SWB_only, L_0);
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
 
@@ -444,6 +442,9 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
 
             if (isRecording) {
+                SWB_only = preRGBFrame.clone();
+                adjustWhiteBalance(SWB_only, L_0);
+
                 LOG.write("L_0", L_0);
                 LOG.write("L_f_pre", L_f_pre);
                 LOG.write("L_0_pre", L_0_pre);
