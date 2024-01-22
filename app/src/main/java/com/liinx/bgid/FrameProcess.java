@@ -18,7 +18,6 @@ import org.opencv.core.Point;
 import org.opencv.core.Point3;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
 import org.opencv.videoio.VideoWriter;
@@ -105,9 +104,10 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     private boolean WhiteBalanceOn = false;
     //是否录制标识
     private boolean isRecording = false;
-    private int grayPointNumber = CONFIG.grayPointNumber;
-    private double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
-    private double contrastThreshold = CONFIG.contrastThreshold;
+    private final boolean showInfo = true;
+    private final int grayPointNumber = CONFIG.grayPointNumber;
+    private final double downsampleFactor = CONFIG.downsampleFactor;//缩放大小
+    private final double contrastThreshold = CONFIG.contrastThreshold;
     //</editor-fold>
 
     //<editor-fold desc="单例">
@@ -265,7 +265,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_0.y += RGB[1];
             L_0.z += RGB[2];
 
-            Imgproc.circle(draw, p, 1, green, -1);
+            if (showInfo) Imgproc.circle(draw, p, 1, green, -1);
             i++;
         }
         L_0.x /= grayPointNumber;
@@ -314,7 +314,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 Point shifted = new Point(pre[i].x + u_trans, pre[i].y + v_trans);
                 if (0<=shifted.x && shifted.x<curRGBFrame.rows() && 0<=shifted.y && shifted.y<curRGBFrame.cols()){
                     shiftedGrayPoints.add(shifted);
-                    Imgproc.circle(result, shifted, 1, red, -1);
+                    if (showInfo) Imgproc.circle(result, shifted, 1, red, -1);
                 }
             }
         }
@@ -360,7 +360,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             WrapPoint p = grayPoints.poll();
             double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
 
-            Imgproc.circle(result, p, 1, blue, -1);
+            if (showInfo) Imgproc.circle(result, p, 1, blue, -1);
 
             L_f.x += RGB[0];
             L_f.y += RGB[1];
@@ -395,10 +395,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
     //灰点检测，光源融合部分
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-//        if (!WhiteBalanceOn){
-//            preGrayPoints = new MatOfPoint2f();
-//            return inputFrame.rgba();
-//        }
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
         curPose = ImuListener.getInstance().getPose();
@@ -433,16 +429,18 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             L_f_pre = L_f;
 
             //<editor-fold desc="输出相关代码，与算法无关">
-            int width = 960;
-            int radius = 40;
+            if (showInfo) {
+                int width = 960;
+                int radius = 40;
 
-            Imgproc.circle(result, new Point(width-3*radius, radius),      radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
-            Imgproc.circle(result, new Point(width-radius, radius),        radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
-            Imgproc.circle(result, new Point(width-3*radius, 3*radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
-            Imgproc.circle(result, new Point(width-radius, 3*radius),   radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
+                Imgproc.circle(result, new Point(width - 3 * radius, radius), radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
+                Imgproc.circle(result, new Point(width - radius, radius), radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
+                Imgproc.circle(result, new Point(width - 3 * radius, 3 * radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
+                Imgproc.circle(result, new Point(width - radius, 3 * radius), radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
 
-            Imgproc.putText(result, "L0       Ls", new Point(width-3*radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
-            Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+                Imgproc.putText(result, "L0       Ls", new Point(width - 3 * radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+                Imgproc.putText(result, "Lref     Lf", new Point(width - 3 * radius, 3 * radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+            }
 
             if (isRecording) {
                 SWB_only = preRGBFrame.clone();
