@@ -79,7 +79,7 @@ class DataOutput{
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
     //<editor-fold desc="输出相关参数">
     private static final String TAG = "GRAY-POINT";
-    private final String rootPath = "/storage/emulated/0/AAAAAA/";
+    private final String rootPath = "/storage/emulated/0/download/";
     private DataOutput LOG = new DataOutput(rootPath);
     //原始视频保存路径
     String fileUrl_o = rootPath+"video_org";
@@ -179,11 +179,11 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 videoWriter_imu = new VideoWriter();
                 videoWriter_SWB = new VideoWriter();
                 videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
-                        new Size(960, 720),true);
+                        new Size(preRGBFrame.width(), preRGBFrame.height()),true);
                 videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
-                        new Size(960, 720),true);
-                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M','J','P','G'),30,
-                        new Size(960,720),true);
+                        new Size(preRGBFrame.width(), preRGBFrame.height()),true);
+                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'),30,
+                        new Size(preRGBFrame.width(),preRGBFrame.height()),true);
                 if(videoWriter_org.isOpened()&&videoWriter_SWB.isOpened()&&videoWriter_SWB.isOpened()){
                     Toast.makeText(ImuListener.activity, "开始录像",Toast.LENGTH_SHORT).show();
                 }
@@ -393,6 +393,21 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         return frame;
     }
 
+    public static Mat convert4ChannelsTo3Channels(Mat inputMat) {
+        // 确保输入图像是4通道的
+        if (inputMat.channels() != 4) {
+            throw new IllegalArgumentException("Input image must have 4 channels (RGBA).");
+        }
+
+        // 创建一个新的Mat，用于存储3通道的图像
+        Mat outputMat = new Mat();
+
+        // 将4通道的Mat转换为3通道的Mat
+        Imgproc.cvtColor(inputMat, outputMat, Imgproc.COLOR_RGBA2RGB);
+
+        return outputMat;
+    }
+
     //灰点检测，光源融合部分
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
@@ -418,7 +433,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             //计算角误差与加权权重
             double theta_s = calAngel(L_f_pre, L_s);
             double theta_0 = calAngel(L_0_pre, L_0);
-            double w = Math.exp(-0.3 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+            double w = Math.exp(-7 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
 
             //加权融合光源
             L_ref = new Point3(
@@ -433,6 +448,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             adjustWhiteBalance(SWB_only, L_0);
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
+            Log.i(TAG, "curRGBFrame通道数：" + curRGBFrame.channels());
 
             //<editor-fold desc="输出相关代码，与算法无关">
             int width = 960;
@@ -457,9 +473,14 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 LOG.write("t0", false, theta_0);
                 LOG.write("w", false, w);
 
-                videoWriter_org.write(preRGBFrame);
-                videoWriter_imu.write(result);
-                videoWriter_SWB.write(SWB_only);
+                Mat preRGBFrame_output = convert4ChannelsTo3Channels(preRGBFrame);
+                Mat result_output = convert4ChannelsTo3Channels(result);
+                Mat SWB_output = convert4ChannelsTo3Channels(SWB_only);
+                Log.i(TAG, "preRGBFrame_output通道数：" + preRGBFrame_output.channels());
+                Log.i(TAG, "preRGBFrame_output宽：" + preRGBFrame_output.width() + " preRGBFrame_output高：" + preRGBFrame_output.height());
+                videoWriter_org.write(preRGBFrame_output);
+                videoWriter_imu.write(result_output);
+                videoWriter_SWB.write(SWB_output);
             }
             //</editor-fold>
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
@@ -472,6 +493,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         prePose = curPose;
         preRGBFrame = curRGBFrame;
 
-        return WhiteBalanceOn ? result : inputFrame.rgba();
+        return WhiteBalanceOn ? result : SWB_only;
     }
 }
