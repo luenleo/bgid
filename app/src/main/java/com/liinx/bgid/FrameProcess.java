@@ -383,7 +383,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainR = new Scalar(LightSourceMean / L_f.x);
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
-        if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
+//        if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
         Scalar[] gain = {gainR, gainG, gainB};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
@@ -393,20 +393,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         return frame;
     }
 
-    public static Mat convert4ChannelsTo3Channels(Mat inputMat) {
-        // 确保输入图像是4通道的
-        if (inputMat.channels() != 4) {
-            throw new IllegalArgumentException("Input image must have 4 channels (RGBA).");
-        }
-
-        // 创建一个新的Mat，用于存储3通道的图像
-        Mat outputMat = new Mat();
-
-        // 将4通道的Mat转换为3通道的Mat
-        Imgproc.cvtColor(inputMat, outputMat, Imgproc.COLOR_RGBA2RGB);
-
-        return outputMat;
-    }
 
     //灰点检测，光源融合部分
     @Override
@@ -463,24 +449,20 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             Imgproc.putText(result, "Lref     Lf", new Point(width-3*radius, 3*radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
 
             if (isRecording) {
-                LOG.write("L_0", L_0);
-                LOG.write("L_f_pre", L_f_pre);
-                LOG.write("L_0_pre", L_0_pre);
-                LOG.write("L_s", L_s);
-                LOG.write("L_ref", L_ref);
-                LOG.write("L_f", L_f);
-                LOG.write("ts", false, theta_s);
-                LOG.write("t0", false, theta_0);
-                LOG.write("w", false, w);
+//                LOG.write("L_0", L_0);
+//                LOG.write("L_f_pre", L_f_pre);
+//                LOG.write("L_0_pre", L_0_pre);
+//                LOG.write("L_s", L_s);
+//                LOG.write("L_ref", L_ref);
+//                LOG.write("L_f", L_f);
+//                LOG.write("ts", false, theta_s);
+//                LOG.write("t0", false, theta_0);
+//                LOG.write("w", false, w);
 
-                Mat preRGBFrame_output = convert4ChannelsTo3Channels(preRGBFrame);
-                Mat result_output = convert4ChannelsTo3Channels(result);
-                Mat SWB_output = convert4ChannelsTo3Channels(SWB_only);
-                Log.i(TAG, "preRGBFrame_output通道数：" + preRGBFrame_output.channels());
-                Log.i(TAG, "preRGBFrame_output宽：" + preRGBFrame_output.width() + " preRGBFrame_output高：" + preRGBFrame_output.height());
-                videoWriter_org.write(preRGBFrame_output);
-                videoWriter_imu.write(result_output);
-                videoWriter_SWB.write(SWB_output);
+
+                videoWriter_org.write(preRGBFrame);
+                videoWriter_imu.write(result);
+                videoWriter_SWB.write(SWB_only);
             }
             //</editor-fold>
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
