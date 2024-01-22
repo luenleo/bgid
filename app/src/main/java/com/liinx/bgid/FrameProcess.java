@@ -340,7 +340,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         return L_s;
     }
 
-    private Point3 correctLight(){
+    private Point3 correctLight(Mat result){
         L_f.x = 0;
         L_f.y = 0;
         L_f.z = 0;
@@ -359,6 +359,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         for (int i = 0; i < grayPointNumber; i++) {
             WrapPoint p = grayPoints.poll();
             double[] RGB = curRGBFrame.get((int) p.x, (int) p.y);
+
+            Imgproc.circle(result, p, 1, blue, -1);
 
             L_f.x += RGB[0];
             L_f.y += RGB[1];
@@ -425,7 +427,7 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
             );
 
             //根据融合光源估计重新进行灰点检测
-            correctLight();
+            correctLight(result);
 
             adjustWhiteBalance(result, L_f);
             L_f_pre = L_f;
@@ -447,8 +449,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 adjustWhiteBalance(SWB_only, L_0);
 
                 LOG.write("L_0", L_0);
-                LOG.write("L_f_pre", L_f_pre);
-                LOG.write("L_0_pre", L_0_pre);
                 LOG.write("L_s", L_s);
                 LOG.write("L_ref", L_ref);
                 LOG.write("L_f", L_f);

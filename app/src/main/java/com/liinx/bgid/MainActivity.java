@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.TextView;
 
 import org.opencv.android.CameraActivity;
 import org.opencv.android.CameraBridgeViewBase;
@@ -53,6 +54,8 @@ public class MainActivity extends CameraActivity {
         ImuListener.activity = this;//设置ImuListener类的静态属性activity为当前Activity的实例
         sensorManager.registerListener(ImuListener.getInstance(), accelerometer, SensorManager.SENSOR_DELAY_FASTEST);//注册线性加速度传感器的监听器
         sensorManager.registerListener(ImuListener.getInstance(), gyroscope, SensorManager.SENSOR_DELAY_FASTEST);//同上
+
+        ((TextView) findViewById(R.id.gyroText)).setText("绿色为单帧估计的灰点\n红色为灰点漂移结果\n蓝色为Lf最终采样点");
     }
 
     @Override
