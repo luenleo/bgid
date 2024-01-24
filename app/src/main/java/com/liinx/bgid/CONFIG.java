@@ -9,14 +9,14 @@ public class CONFIG {
     public static final int nCluster = 3;
     // Kmeans聚类的迭代次数
     public static final int terminalTime = 15;
-    // 聚类权重tau
+    // 聚类权重tau，现在已经没用了
     public static final float tau = 0.1f;
     // 灰度指数的threshold
     public static final int grayPointNumber = 100;
     public static final double downsampleFactor = 0.25;
     public static final double contrastThreshold = 1e-4;
 
-    /* ----项目配置---- */
+    /* ----项目配置----现在已经没用了 */
     public static final float xRate = 1920.0f / 1280.0f;
     public static final float yRate = 1080.0f / 720.0f;
     public static final int videoHeight = 720;
@@ -27,7 +27,7 @@ public class CONFIG {
 
 
 
-    /* ----硬件相关参数---- */
+    /* ----硬件相关参数----除了内参现在已经没用了 */
     // 相机内参矩阵
     public static final Mat innerMat = new Mat(3, 3, CvType.CV_64F);
     public static final Mat M1 = new Mat(3, 3, CvType.CV_64F);

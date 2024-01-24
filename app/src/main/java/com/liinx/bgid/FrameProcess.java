@@ -1,10 +1,9 @@
 package com.liinx.bgid;
 
-import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
-import android.widget.Toast;
 
+import com.liinx.bgid.utils.DataOutput;
 import com.liinx.bgid.utils.Quaternion;
 
 import org.opencv.android.CameraBridgeViewBase;
@@ -20,78 +19,17 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
-import org.opencv.videoio.VideoWriter;
-import org.opencv.videoio.Videoio;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.PriorityQueue;
-
-class DataOutput{
-    private String rootPath;
-    private Map<String, File> files = new HashMap<>();
-
-    public DataOutput(String rootPath) {
-        this.rootPath = rootPath;
-    }
-
-    public void write(String type, boolean separator, double... data){
-        File f;
-        if (files.containsKey(type)){
-            f = files.get(type);
-        } else {
-            f = new File(rootPath+type+".txt");
-            try (FileWriter w = new FileWriter(f)){
-                w.write("");
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            files.put(type, f);
-        }
-        try (FileWriter writer = new FileWriter(f, true)){
-            StringBuilder temp = new StringBuilder();
-            for (double x : data)
-                if (separator) temp.append(String.format("%1.6f", x)).append(',').append(' ');
-                else temp.append(String.format("%1.6f", x));
-            temp.append('\n');
-            writer.append(temp.toString());
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public void write(String type, double... data){
-        write(type, true, data);
-    }
-
-    public void write(String type, Point3 p){
-        write(type, p.x, p.y, p.z);
-    }
-}
 
 public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2, View.OnClickListener {
     //<editor-fold desc="输出相关参数">
     private static final String TAG = "GRAY-POINT";
     private final String rootPath = "/storage/emulated/0/AAAAAA/";
-    private DataOutput LOG = new DataOutput(rootPath);
-    //原始视频保存路径
-    String fileUrl_o = rootPath+"video_org";
-    //处理视频保存路径
-    String fileUrl_imu = rootPath+"video_imu";
-    //单帧白平衡视频保存路径
-    String fileUrl_SWB = rootPath+"video_SWB";
-    //原始视频
-    VideoWriter videoWriter_org = null;
-    //经过ium灰点漂移加光源融合后的视频
-    VideoWriter videoWriter_imu = null;
-    //仅通过单帧白平衡得到的视频
-    VideoWriter videoWriter_SWB = null;
+    private DataOutput dataOutput;
 
     private static final Scalar red      = new Scalar(255,  50,  50);
     private static final Scalar green    = new Scalar( 50, 255,  50);
@@ -175,24 +113,13 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         if (v.getId() == R.id.button) {
             if(isRecording == false){
                 isRecording = true;
-                videoWriter_org = new VideoWriter();
-                videoWriter_imu = new VideoWriter();
-                videoWriter_SWB = new VideoWriter();
-                videoWriter_org.open(fileUrl_o + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
-                        new Size(960, 720),true);
-                videoWriter_imu.open(fileUrl_imu + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M', 'J', 'P', 'G'), 30,
-                        new Size(960, 720),true);
-                videoWriter_SWB.open(fileUrl_SWB + ".avi", Videoio.CAP_OPENCV_MJPEG,VideoWriter.fourcc('M','J','P','G'),30,
-                        new Size(960,720),true);
+                dataOutput = new DataOutput(rootPath);
 
                 ((TextView) activity.findViewById(R.id.button)).setText("结束录像");
             }else{
                 isRecording = false;
-                videoWriter_org.release();
-                videoWriter_imu.release();
-                videoWriter_SWB.release();
+                dataOutput.release();
 
-                Toast.makeText(ImuListener.activity, "保存至:" + fileUrl_o + "以及" + fileUrl_imu,Toast.LENGTH_SHORT).show();
                 ((TextView) activity.findViewById(R.id.button)).setText("开始录像");
             }
         }
@@ -383,7 +310,6 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Scalar gainR = new Scalar(LightSourceMean / L_f.x);
         Scalar gainG = new Scalar(LightSourceMean / L_f.y);
         Scalar gainB = new Scalar(LightSourceMean / L_f.z);
-        if(isRecording) LOG.write("WB", LightSourceMean / L_f.x, LightSourceMean / L_f.y, LightSourceMean / L_f.z);
         Scalar[] gain = {gainR, gainG, gainB};
         for(int i = 0; i < 3; i++){
             Mat channel = channels.get(i);
@@ -447,17 +373,17 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
                 SWB_only = preRGBFrame.clone();
                 adjustWhiteBalance(SWB_only, L_0);
 
-                LOG.write("L_0", L_0);
-                LOG.write("L_s", L_s);
-                LOG.write("L_ref", L_ref);
-                LOG.write("L_f", L_f);
-                LOG.write("ts", false, theta_s);
-                LOG.write("t0", false, theta_0);
-                LOG.write("w", false, w);
+                dataOutput.write("L_0", L_0);
+                dataOutput.write("L_s", L_s);
+                dataOutput.write("L_ref", L_ref);
+                dataOutput.write("L_f", L_f);
+                dataOutput.write("ts", false, theta_s);
+                dataOutput.write("t0", false, theta_0);
+                dataOutput.write("w", false, w);
 
-                videoWriter_org.write(preRGBFrame);
-                videoWriter_imu.write(result);
-                videoWriter_SWB.write(SWB_only);
+                dataOutput.write("video_org", preRGBFrame);
+                dataOutput.write("video_imu", result);
+                dataOutput.write("video_SWB", SWB_only);
             }
             //</editor-fold>
         } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
