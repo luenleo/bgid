@@ -235,8 +235,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         Core.subtract(blueFrame, temp, blueFrame);
 
         // LoG
-        Imgproc.GaussianBlur(redFrame, redFrame, new Size(3,3), 2);
-        Imgproc.GaussianBlur(blueFrame, blueFrame, new Size(3,3), 2);
+        Imgproc.GaussianBlur(redFrame, redFrame, new Size(3,3), 0);
+        Imgproc.GaussianBlur(blueFrame, blueFrame, new Size(3,3), 0);
         Imgproc.Laplacian(redFrame, redFrame, CvType.CV_64F, 1);
         Imgproc.Laplacian(blueFrame, blueFrame, CvType.CV_64F, 1);
 
@@ -250,7 +250,8 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         PriorityQueue<WrapPoint> grayPoints = new PriorityQueue<>(cmp);
         for (int i = 1; i < temp.rows()-1; i += 1)
             for (int j = 1; j < temp.cols()-1; j += 1) {
-                if (redFrame.get(i, j)[0] > contrastThreshold && blueFrame.get(i, j)[0] > contrastThreshold)
+                double redValue = redFrame.get(i, j)[0], blueValue = blueFrame.get(i, j)[0];
+                if ((redValue > contrastThreshold || redValue < -contrastThreshold) &&  (blueValue > contrastThreshold || blueValue < -contrastThreshold))
                     grayPoints.add(new WrapPoint(i/downsampleFactor, j/downsampleFactor, temp.get(i, j)[0]));//点的位置还原回原图，像素值采用插值后的像素值
             }
 

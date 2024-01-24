@@ -14,7 +14,7 @@ public class CONFIG {
     // 灰度指数的threshold
     public static final int grayPointNumber = 100;
     public static final double downsampleFactor = 0.25;
-    public static final double contrastThreshold = -1e-2;
+    public static final double contrastThreshold = 1e-4;
 
     /* ----项目配置---- */
     public static final float xRate = 1920.0f / 1280.0f;
