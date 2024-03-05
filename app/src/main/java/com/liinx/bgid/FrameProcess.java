@@ -325,78 +325,84 @@ public class FrameProcess implements CameraBridgeViewBase.CvCameraViewListener2,
         curRGBFrame = inputFrame.rgba();
         curGrayFrame = inputFrame.gray();
         curPose = ImuListener.getInstance().getPose();
+//
+//        Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
+//
+//        singleFrameLightEst(curRGBFrame, result);
+//
+//        //非第一帧，有前一帧
+//        if (!preGrayPoints.empty()){
+//
+//            // 计算光流，计算映射过后的灰点位置集合
+//            Point3 L_s = grayPointShiftLightEst(result);
+//
+//            //计算角误差与加权权重
+//            double theta_s = calAngel(L_f_pre, L_s);
+//            double theta_0 = calAngel(L_0_pre, L_0);
+//            // 系数越大，得到的结果波动越大，调整为10或3比较稳定
+//            double w = Math.exp(-10 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
+//
+//            //加权融合光源
+//            L_ref = new Point3(
+//                    L_f_pre.x * w + L_0.x * (1-w),
+//                    L_f_pre.y * w + L_0.y * (1-w),
+//                    L_f_pre.z * w + L_0.z * (1-w)
+//            );
+//
+//            //根据融合光源估计重新进行灰点检测
+//            correctLight(result);
+//
+//            adjustWhiteBalance(result, L_f);
+//            L_f_pre = L_f;
+//
+//            //<editor-fold desc="输出相关代码，与算法无关">
+//            if (showInfo) {
+//                int width = 960;
+//                int radius = 40;
+//
+//                Imgproc.circle(result, new Point(width - 3 * radius, radius), radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
+//                Imgproc.circle(result, new Point(width - radius, radius), radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
+//                Imgproc.circle(result, new Point(width - 3 * radius, 3 * radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
+//                Imgproc.circle(result, new Point(width - radius, 3 * radius), radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
+//
+//                Imgproc.putText(result, "L0       Ls", new Point(width - 3 * radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+//                Imgproc.putText(result, "Lref     Lf", new Point(width - 3 * radius, 3 * radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
+//            }
+//
+//            if (isRecording) {
+//                SWB_only = preRGBFrame.clone();
+//                adjustWhiteBalance(SWB_only, L_0);
+//
+//                dataOutput.write("L_0", L_0);
+//                dataOutput.write("L_s", L_s);
+//                dataOutput.write("L_ref", L_ref);
+//                dataOutput.write("L_f", L_f);
+//                dataOutput.write("ts", false, theta_s);
+//                dataOutput.write("t0", false, theta_0);
+//                dataOutput.write("w", false, w);
+//
+//                dataOutput.write("video_org", preRGBFrame);
+//                dataOutput.write("video_imu", result);
+//                dataOutput.write("video_SWB", SWB_only);
+//            }
+//            //</editor-fold>
+//        } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
+//            L_f_pre = L_0;
+//        }
+//
+//        L_0_pre = L_0;
+//        preGrayPoints = curGrayPoints;
+//
+//        preGrayFrame = curGrayFrame;
+//        prePose = curPose;
+//        preRGBFrame = curRGBFrame;
+//
+//        return WhiteBalanceOn ? result : inputFrame.rgba();
 
-        Mat result = (preRGBFrame==null) ?curRGBFrame :preRGBFrame.clone();
-
-        singleFrameLightEst(curRGBFrame, result);
-
-        //非第一帧，有前一帧
-        if (!preGrayPoints.empty()){
-
-            // 计算光流，计算映射过后的灰点位置集合
-            Point3 L_s = grayPointShiftLightEst(result);
-
-            //计算角误差与加权权重
-            double theta_s = calAngel(L_f_pre, L_s);
-            double theta_0 = calAngel(L_0_pre, L_0);
-            // 系数越大，得到的结果波动越大，调整为10或3比较稳定
-            double w = Math.exp(-10 * Math.min(theta_0, theta_s) * Math.min(theta_0, theta_s));
-
-            //加权融合光源
-            L_ref = new Point3(
-                    L_f_pre.x * w + L_0.x * (1-w),
-                    L_f_pre.y * w + L_0.y * (1-w),
-                    L_f_pre.z * w + L_0.z * (1-w)
-            );
-
-            //根据融合光源估计重新进行灰点检测
-            correctLight(result);
-
-            adjustWhiteBalance(result, L_f);
-            L_f_pre = L_f;
-
-            //<editor-fold desc="输出相关代码，与算法无关">
-            if (showInfo) {
-                int width = 960;
-                int radius = 40;
-
-                Imgproc.circle(result, new Point(width - 3 * radius, radius), radius, new Scalar(L_0.x, L_0.y, L_0.z), -1);
-                Imgproc.circle(result, new Point(width - radius, radius), radius, new Scalar(L_s.x, L_s.y, L_s.z), -1);
-                Imgproc.circle(result, new Point(width - 3 * radius, 3 * radius), radius, new Scalar(L_ref.x, L_ref.y, L_ref.z), -1);
-                Imgproc.circle(result, new Point(width - radius, 3 * radius), radius, new Scalar(L_f.x, L_f.y, L_f.z), -1);
-
-                Imgproc.putText(result, "L0       Ls", new Point(width - 3 * radius, radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
-                Imgproc.putText(result, "Lref     Lf", new Point(width - 3 * radius, 3 * radius), Imgproc.FONT_HERSHEY_TRIPLEX, 0.5, new Scalar(0, 255, 0));
-            }
-
-            if (isRecording) {
-                SWB_only = preRGBFrame.clone();
-                adjustWhiteBalance(SWB_only, L_0);
-
-                dataOutput.write("L_0", L_0);
-                dataOutput.write("L_s", L_s);
-                dataOutput.write("L_ref", L_ref);
-                dataOutput.write("L_f", L_f);
-                dataOutput.write("ts", false, theta_s);
-                dataOutput.write("t0", false, theta_0);
-                dataOutput.write("w", false, w);
-
-                dataOutput.write("video_org", preRGBFrame);
-                dataOutput.write("video_imu", result);
-                dataOutput.write("video_SWB", SWB_only);
-            }
-            //</editor-fold>
-        } else {//为第一帧,单帧检测结果即为最终光源估计（论文中为最终光源融合结果L_ref，这里不再通过新的灰度指数计算方法进行灰点检测）
-            L_f_pre = L_0;
+        if (isRecording) {
+            dataOutput.write("pose", curPose);
+            dataOutput.write("origin_video", curRGBFrame);
         }
-
-        L_0_pre = L_0;
-        preGrayPoints = curGrayPoints;
-
-        preGrayFrame = curGrayFrame;
-        prePose = curPose;
-        preRGBFrame = curRGBFrame;
-
-        return WhiteBalanceOn ? result : inputFrame.rgba();
+        return curRGBFrame;
     }
 }

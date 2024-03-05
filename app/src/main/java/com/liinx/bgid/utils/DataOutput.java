@@ -102,4 +102,8 @@ public class DataOutput {
     public void write(String type, Point3 p) {
         write(type, p.x, p.y, p.z);
     }
+
+    public void write(String type, Quaternion q){
+        write(type, q.w, q.x, q.y, q.z);
+    }
 }
